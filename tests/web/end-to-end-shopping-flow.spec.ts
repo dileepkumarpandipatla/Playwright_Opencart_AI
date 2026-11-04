@@ -14,7 +14,7 @@ import { Helper } from "../../utils/helper";
 import { RandomDataUtil } from "../../utils/dataGenerator";
 
 test(
-  "End-to-end shopping flow test @master @sanity @regression @web @end-to-end",
+  "End-to-end shopping flow test @master @sanity @regression @web @e2e",
   async ({
     accountPage,
     cartPage,
