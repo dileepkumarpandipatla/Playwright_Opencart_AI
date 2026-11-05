@@ -21,7 +21,7 @@ on:
           - test:api
           - test:web
           - test:datadriven
-        default: "test:api"
+        default: "test:web"
       browser:
         description: "Select browser"
         type: choice
@@ -84,7 +84,7 @@ jobs:
       - name: 🧪 Run Playwright Tests
         shell: pwsh
         run: |
-          $suite = "${{ github.event.inputs.test_suite || 'test:api' }}"
+          $suite = "${{ github.event.inputs.test_suite || 'test:web' }}"
           $browser = "${{ github.event.inputs.browser || 'chromium' }}"
           $mode = "${{ github.event.inputs.mode || 'headless' }}"
           $tag = $suite -replace 'test:', ''
