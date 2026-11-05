@@ -187,22 +187,35 @@ jobs:
           New-Item -ItemType Directory -Force -Path "pages-site/playwright" | Out-Null
           New-Item -ItemType Directory -Force -Path "pages-site/allure" | Out-Null
 
-          # Copy Playwright report
-          if (Test-Path "test-results/playwright/index.html") {
-            Copy-Item "test-results/playwright/." "pages-site/playwright" -Recurse -Force
+          # Copy Playwright report contents (remove nested playwright folder)
+          $playwrightSource = "test-results/playwright/playwright"
+
+          if (Test-Path "$playwrightSource/index.html") {
+            Copy-Item "$playwrightSource/." "pages-site/playwright/" -Recurse -Force
             Write-Host "Playwright report copied successfully."
           }
           else {
-            throw "Playwright HTML report index.html was not found. Check playwright.config.ts outputFolder."
+            throw "Playwright report not found at $playwrightSource/index.html"
           }
 
-          # Copy Allure report
-          if (Test-Path "test-results/allure/report/index.html") {
-            Copy-Item "test-results/allure/report/." "pages-site/allure" -Recurse -Force
+          # Copy Allure report contents (remove nested report folder)
+          $allureSource = "test-results/allure/report"
+
+          if (Test-Path "$allureSource/index.html") {
+            Copy-Item "$allureSource/." "pages-site/allure/" -Recurse -Force
             Write-Host "Allure report copied successfully."
           }
           else {
-            throw "Allure HTML report index.html was not found."
+            throw "Allure report not found at $allureSource/index.html"
+          }
+
+          # Validate final published structure
+          if (-not (Test-Path "pages-site/playwright/index.html")) {
+            throw "Published Playwright index.html is missing."
+          }
+
+          if (-not (Test-Path "pages-site/allure/index.html")) {
+            throw "Published Allure index.html is missing."
           }
 
           # Create landing page
@@ -225,7 +238,7 @@ jobs:
           Set-Content -Path "pages-site/index.html" -Value $html -Encoding utf8
 
           Write-Host "======================================"
-          Write-Host "Published report files:"
+          Write-Host "FINAL PUBLISHED FOLDER STRUCTURE"
           Get-ChildItem "pages-site" -Recurse | Select-Object FullName
           Write-Host "======================================"
 
