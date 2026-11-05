@@ -44,7 +44,7 @@ export default defineConfig({
     //['json', { outputFile: 'reports/results.json' }], // JSON Report
     ["html", { open: "never", outputFolder: "test-results/playwright" }], // Playwright HTML report
     ["junit", { outputFile: "test-results/junit/results.xml" }],  // JUnit XML report
-    ["./utils/CustomReporter.ts"],  // Custom reporter
+    // ["./utils/CustomReporter.ts"],  // Custom reporter
     ["allure-playwright", { resultsDir: "test-results/allure/results", }] // Allure report results
   ],
 
