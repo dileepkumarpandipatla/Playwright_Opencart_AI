@@ -175,11 +175,16 @@ jobs:
           $mode = $env:SELECTED_MODE
 
           # --------------------------------------
-          # Default values for push and PR runs
+          # Default values based on trigger
           # --------------------------------------
 
           if ([string]::IsNullOrWhiteSpace($suite)) {
-            $suite = "test:master"
+            if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+              $suite = "test:e2e"
+            }
+            else {
+              $suite = "test:master"
+            }
           }
 
           if ([string]::IsNullOrWhiteSpace($browser)) {
@@ -191,10 +196,11 @@ jobs:
           }
 
           # --------------------------------------
-          # Explicit test suite to tag mapping
+          # Map selected suite to respective tag
           # --------------------------------------
 
           $tag = switch ($suite) {
+
             "test:master"     { "@master" }
             "test:sanity"     { "@sanity" }
             "test:regression" { "@regression" }
@@ -204,13 +210,13 @@ jobs:
             "test:datadriven" { "@datadriven" }
 
             default {
-              Write-Error "Invalid test suite: $suite"
+              Write-Error "Invalid test suite selected: $suite"
               exit 1
             }
           }
 
           # --------------------------------------
-          # Display execution configuration
+          # Display selected configuration
           # --------------------------------------
 
           Write-Host "=========================================="
@@ -241,7 +247,7 @@ jobs:
           }
 
           # --------------------------------------
-          # Build execution command
+          # Build execution arguments
           # --------------------------------------
 
           $playwrightArgs = @(
@@ -256,7 +262,7 @@ jobs:
           }
 
           # --------------------------------------
-          # Execute selected test cases
+          # Execute selected tests
           # --------------------------------------
 
           Write-Host "Executing selected test cases..."
@@ -289,7 +295,7 @@ jobs:
         run: npx allure generate test-results/allure/results --clean -o test-results/allure/report
 
       # ==================================================
-      # 🌐 13. UPLOAD ALLURE REPORT TO GITHUB PAGES
+      # 🌐 13. UPLOAD ALLURE REPORT
       # ==================================================
 
       - name: Upload Allure Report
@@ -308,7 +314,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
       # ==================================================
-      # 🔗 15. DISPLAY ALLURE REPORT URL
+      # 🔗 15. DISPLAY SHAREABLE REPORT URL
       # ==================================================
 
       - name: Display Allure Report URL
@@ -319,8 +325,8 @@ jobs:
 
           Write-Host "Allure Report URL: $url"
 
-          "### 📊 Allure Report" >> $env:GITHUB_STEP_SUMMARY
-          "View your report: [$url]($url)" >> $env:GITHUB_STEP_SUMMARY
+          "### 📊 Allure Test Report" >> $env:GITHUB_STEP_SUMMARY
+          "[$url]($url)" >> $env:GITHUB_STEP_SUMMARY
 
       # ==================================================
       # 📤 16. UPLOAD TEST REPORT ARTIFACTS
