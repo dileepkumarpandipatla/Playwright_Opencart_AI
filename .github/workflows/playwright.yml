@@ -61,21 +61,25 @@ jobs:
       - name: ⚙️ Create .env File
         shell: pwsh
         run: |
-          @"
-          APP_EMAIL=$env:APP_EMAIL
-          APP_PASSWORD=$env:APP_PASSWORD
-          PASSWORD=$env:API_PASSWORD
-          ADMIN_USERNAME=$env:ADMIN_USERNAME
-          ADMIN_PASSWORD=$env:ADMIN_PASSWORD
-          DB_PASSWORD=$env:DB_PASSWORD
-          "@ | Set-Content -Path .env -Encoding utf8
+          Copy-Item .env.example .env
+
+          $envContent = Get-Content .env -Raw
+
+          $envContent = $envContent -replace '(?m)^APP_EMAIL=.*$', "APP_EMAIL=$env:APP_EMAIL"
+          $envContent = $envContent -replace '(?m)^APP_PASSWORD=.*$', "APP_PASSWORD=$env:APP_PASSWORD"
+          $envContent = $envContent -replace '(?m)^PASSWORD=.*$', "PASSWORD=$env:API_PASSWORD"
+          $envContent = $envContent -replace '(?m)^DB_PASSWORD=.*$', "DB_PASSWORD=$env:DB_PASSWORD"
+          $envContent = $envContent -replace '(?m)^ADMIN_USERNAME=.*$', "ADMIN_USERNAME=$env:ADMIN_USERNAME"
+          $envContent = $envContent -replace '(?m)^ADMIN_PASSWORD=.*$', "ADMIN_PASSWORD=$env:ADMIN_PASSWORD"
+
+          Set-Content -Path .env -Value $envContent -Encoding utf8
         env:
           APP_EMAIL: ${{ secrets.APP_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           API_PASSWORD: ${{ secrets.API_PASSWORD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       - name: 🧪 Run Playwright Tests
         shell: pwsh
@@ -125,7 +129,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results
+          name: allure-results/
           path: allure-results/
           retention-days: 30
           if-no-files-found: ignore
