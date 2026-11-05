@@ -38,14 +38,10 @@ export default defineConfig({
   // ==================================================
 
   reporter: [
-    ["list"], // Console reporter
-    //['line'], // One-line progress output
-    //['dot'],  // Minimal console output
-    //['json', { outputFile: 'reports/results.json' }], // JSON Report
-    ["html", { open: "never", outputFolder: "test-results/playwright" }], // Playwright HTML report
-    ["junit", { outputFile: "test-results/junit/results.xml" }],  // JUnit XML report
-    // ["./utils/CustomReporter.ts"],  // Custom reporter
-    ["allure-playwright", { resultsDir: "test-results/allure/results", }] // Allure report results
+    ["list"],
+    ["html", { open: "never", outputFolder: "playwright-report" }],
+    ["junit", { outputFile: "junit-report/results.xml" }],
+    ["allure-playwright", { resultsDir: "allure-results" }]
   ],
 
   // ==================================================
@@ -53,24 +49,19 @@ export default defineConfig({
   // ==================================================
 
   use: {
-    // Application URL
     baseURL: process.env.WEB_APP_URL,
 
-    // Browser execution mode
     headless: isCI,
 
-    // Failure debugging options
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
 
-    // Browser window settings
     viewport: {
       width: 1280,
       height: 720,
     },
 
-    // Browser permissions and security
     ignoreHTTPSErrors: true,
     permissions: ["geolocation"],
   },
@@ -80,7 +71,6 @@ export default defineConfig({
   // ==================================================
 
   projects: [
-    // Chromium
     {
       name: "chromium",
       use: {
@@ -88,7 +78,6 @@ export default defineConfig({
       },
     },
 
-    // Firefox
     {
       name: "firefox",
       use: {
@@ -96,7 +85,6 @@ export default defineConfig({
       },
     },
 
-    // WebKit
     {
       name: "webkit",
       use: {

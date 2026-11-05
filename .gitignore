@@ -28,9 +28,10 @@ node_modules/
 # ==================================================
 
 /reports/
+/playwright-report/
+/junit-report/
 /allure-results/
 /allure-report/
-/custom-report/
 
 # ==================================================
 # 5. CUSTOM OUTPUT FOLDERS

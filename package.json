@@ -33,7 +33,7 @@
     "test:datadriven": "playwright test --grep @datadriven",
     "test:master:headed": "playwright test --grep @master --headed",
     "test:sanity:debug": "playwright test --grep @sanity --debug",
-    "report:allure:generate": "allure generate test-results/allure/results --clean -o test-results/allure/report",
-    "report:allure:open": "allure open test-results/allure/report"
+    "allure:generate": "npx allure generate ./allure-results -o ./allure-report --clean",
+    "allure:open": "npx allure open ./allure-report"
   }
 }

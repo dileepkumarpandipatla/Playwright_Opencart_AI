@@ -1,15 +1,13 @@
 
-# To run manually: Repository → Actions → Playwright Tests → Run workflow.
+# To run manually: go to your repo → Actions → Playwright Tests → Run workflow → choose your parameters → Run.
 
 name: 🎭 Playwright Tests
 
 on:
   push:
     branches: [master]
-
   pull_request:
     branches: [master]
-
   workflow_dispatch:
     inputs:
       test_suite:
@@ -24,7 +22,6 @@ on:
           - test:web
           - test:datadriven
         default: "test:e2e"
-
       browser:
         description: "Select browser"
         type: choice
@@ -33,7 +30,6 @@ on:
           - firefox
           - webkit
         default: "chromium"
-
       mode:
         description: "Run mode"
         type: choice
@@ -44,57 +40,35 @@ on:
 
 jobs:
   test:
-    name: Playwright Automation Tests
     timeout-minutes: 60
     runs-on: windows-latest
 
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-
-    environment:
-      name: github-pages
-
     steps:
-
-      # ==================================================
-      # 📥 1. CHECKOUT REPOSITORY
-      # ==================================================
-
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
-
-      # ==================================================
-      # 🟢 2. SETUP NODE.JS
-      # ==================================================
 
       - name: 🟢 Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
-          cache: npm
-
-      # ==================================================
-      # 📦 3. INSTALL DEPENDENCIES
-      # ==================================================
+          node-version: lts/*
 
       - name: 📦 Install Dependencies
         run: npm ci
 
-      # ==================================================
-      # 🎭 4. INSTALL PLAYWRIGHT BROWSERS
-      # ==================================================
-
       - name: 🎭 Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      # ==================================================
-      # 🔐 5. CREATE .ENV FILE WITH GITHUB SECRETS
-      # ==================================================
-
       - name: ⚙️ Create .env File
         shell: pwsh
+        run: |
+          @"
+          APP_EMAIL=$env:APP_EMAIL
+          APP_PASSWORD=$env:APP_PASSWORD
+          PASSWORD=$env:API_PASSWORD
+          ADMIN_USERNAME=$env:ADMIN_USERNAME
+          ADMIN_PASSWORD=$env:ADMIN_PASSWORD
+          DB_PASSWORD=$env:DB_PASSWORD
+          "@ | Set-Content -Path .env -Encoding utf8
         env:
           APP_EMAIL: ${{ secrets.APP_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
@@ -102,256 +76,56 @@ jobs:
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: |
-          Copy-Item .env.example .env
-
-          $values = @{
-            "APP_EMAIL"      = $env:APP_EMAIL
-            "APP_PASSWORD"   = $env:APP_PASSWORD
-            "PASSWORD"       = $env:API_PASSWORD
-            "ADMIN_USERNAME" = $env:ADMIN_USERNAME
-            "ADMIN_PASSWORD" = $env:ADMIN_PASSWORD
-            "DB_PASSWORD"    = $env:DB_PASSWORD
-          }
-
-          $lines = Get-Content .env
-
-          $updatedLines = foreach ($line in $lines) {
-            $matched = $false
-
-            foreach ($key in $values.Keys) {
-              if ($line -match "^$([regex]::Escape($key))=") {
-                $matched = $true
-                "$key=$($values[$key])"
-                break
-              }
-            }
-
-            if (-not $matched) {
-              $line
-            }
-          }
-
-          Set-Content -Path .env -Value $updatedLines -Encoding utf8
-
-      # ==================================================
-      # 🧪 6. RUN SELECTED PLAYWRIGHT TESTS
-      # ==================================================
 
       - name: 🧪 Run Playwright Tests
         shell: pwsh
-        env:
-          CI: "1"
         run: |
           $suite = "${{ github.event.inputs.test_suite || 'test:e2e' }}"
           $browser = "${{ github.event.inputs.browser || 'chromium' }}"
           $mode = "${{ github.event.inputs.mode || 'headless' }}"
-
-          $tag = $suite -replace '^test:', ''
+          $tag = $suite -replace 'test:', ''
           $browserFlag = "--project=$browser"
           $modeFlag = if ($mode -eq 'headed') { '--headed' } else { '' }
+          npx playwright test --grep "@$tag" $browserFlag $modeFlag --output=test-results
+        env:
+          CI: "1"
 
-          Write-Host "======================================"
-          Write-Host "Selected Suite : $suite"
-          Write-Host "Selected Tag   : @$tag"
-          Write-Host "Browser        : $browser"
-          Write-Host "Mode           : $mode"
-          Write-Host "======================================"
-
-          npx playwright test --grep "@$tag" $browserFlag $modeFlag
-
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-      # ==================================================
-      # ☕ 7. SETUP JAVA FOR ALLURE
-      # ==================================================
-
-      - name: ☕ Setup Java
-        if: always() && hashFiles('test-results/allure/results/**') != ''
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # ==================================================
-      # 📊 8. GENERATE ALLURE HTML REPORT
-      # ==================================================
-
-      - name: 📊 Generate Allure Report
-        if: always() && hashFiles('test-results/allure/results/**') != ''
-        run: npx allure generate test-results/allure/results --clean -o test-results/allure/report
-
-      # ==================================================
-      # 📁 9. PREPARE REPORTS FOR GITHUB PAGES
-      # ==================================================
-
-      - name: 📁 Prepare Reports for Publishing
+      - name: 📈 Generate Allure HTML Report
         if: always()
-        shell: pwsh
-        run: |
-
-          New-Item -ItemType Directory -Force -Path "pages-site/playwright" | Out-Null
-          New-Item -ItemType Directory -Force -Path "pages-site/allure" | Out-Null
-
-          # ------------------------------------------
-          # 🎭 Find Playwright HTML report automatically
-          # ------------------------------------------
-
-          $playwrightIndex = Get-ChildItem `
-            -Path "test-results/playwright" `
-            -Filter "index.html" `
-            -File `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-
-          if ($null -eq $playwrightIndex) {
-            throw "Playwright HTML report index.html was not found."
-          }
-
-          $playwrightSource = $playwrightIndex.Directory.FullName
-
-          Write-Host "Playwright report found: $($playwrightIndex.FullName)"
-
-          Copy-Item "$playwrightSource/*" `
-            "pages-site/playwright/" `
-            -Recurse -Force
-
-          # ------------------------------------------
-          # 📊 Find Allure HTML report
-          # ------------------------------------------
-
-          $allureIndex = Get-ChildItem `
-            -Path "test-results/allure/report" `
-            -Filter "index.html" `
-            -File `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-
-          if ($null -eq $allureIndex) {
-            throw "Allure HTML report index.html was not found."
-          }
-
-          $allureSource = $allureIndex.Directory.FullName
-
-          Write-Host "Allure report found: $($allureIndex.FullName)"
-
-          Copy-Item "$allureSource/*" `
-            "pages-site/allure/" `
-            -Recurse -Force
-
-          # ------------------------------------------
-          # 🏠 Create landing page
-          # ------------------------------------------
-
-          $html = @'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Automation Test Reports</title>
-          </head>
-          <body>
-            <h1>Automation Test Reports</h1>
-            <ul>
-              <li><a href="./playwright/">Playwright HTML Report</a></li>
-              <li><a href="./allure/">Allure HTML Report</a></li>
-            </ul>
-          </body>
-          </html>
-          '@
-
-          Set-Content -Path "pages-site/index.html" -Value $html -Encoding utf8
-
-          # ------------------------------------------
-          # ✅ Validate final published reports
-          # ------------------------------------------
-
-          if (-not (Test-Path "pages-site/playwright/index.html")) {
-            throw "Published Playwright report is missing."
-          }
-
-          if (-not (Test-Path "pages-site/allure/index.html")) {
-            throw "Published Allure report is missing."
-          }
-
-          Write-Host "======================================"
-          Write-Host "BOTH REPORTS ARE READY"
-          Write-Host "======================================"
-
-          Get-ChildItem "pages-site" -Recurse |
-            Select-Object FullName
-
-      # ==================================================
-      # 📤 10. UPLOAD PLAYWRIGHT REPORT
-      # ==================================================
+        run: npx allure generate allure-results --clean -o allure-report
 
       - name: 📊 Upload Playwright HTML Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: test-results/playwright/
-          if-no-files-found: warn
+          path: playwright-report/
           retention-days: 30
+          if-no-files-found: ignore
 
-      # ==================================================
-      # 📈 11. UPLOAD ALLURE RESULTS
-      # ==================================================
+      - name: 📋 Upload JUnit Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: junit-report/
+          retention-days: 30
+          if-no-files-found: ignore
 
-      - name: 📈 Upload Allure Results
+      - name: 📈 Upload Allure HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-html-report
+          path: allure-report/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 📁 Upload Allure Raw Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: allure-results
-          path: test-results/allure/results/
-          if-no-files-found: warn
+          path: allure-results/
           retention-days: 30
-
-      # ==================================================
-      # 🌐 12. UPLOAD BOTH REPORTS TO GITHUB PAGES
-      # ==================================================
-
-      - name: 🌐 Upload Reports to GitHub Pages
-        if: always() && github.event_name != 'pull_request' && hashFiles('pages-site/**') != ''
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: pages-site/
-
-      # ==================================================
-      # 🚀 13. DEPLOY REPORTS
-      # ==================================================
-
-      - name: 🚀 Deploy Reports to GitHub Pages
-        if: always() && github.event_name != 'pull_request' && hashFiles('pages-site/**') != ''
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-      # ==================================================
-      # 🔗 14. DISPLAY BOTH SHAREABLE REPORT URLS
-      # ==================================================
-
-      - name: 🔗 Display Report URLs
-        if: always() && steps.deployment.outputs.page_url != ''
-        shell: pwsh
-        run: |
-          $baseUrl = "${{ steps.deployment.outputs.page_url }}".TrimEnd('/')
-
-          $playwrightUrl = "$baseUrl/playwright/"
-          $allureUrl = "$baseUrl/allure/"
-
-          Write-Host "======================================"
-          Write-Host "PLAYWRIGHT HTML REPORT:"
-          Write-Host $playwrightUrl
-          Write-Host ""
-          Write-Host "ALLURE HTML REPORT:"
-          Write-Host $allureUrl
-          Write-Host "======================================"
-
-          "## 📊 Test Reports" >> $env:GITHUB_STEP_SUMMARY
-          "| Report | Shareable URL |" >> $env:GITHUB_STEP_SUMMARY
-          "|---|---|" >> $env:GITHUB_STEP_SUMMARY
-          "| Playwright HTML | [$playwrightUrl]($playwrightUrl) |" >> $env:GITHUB_STEP_SUMMARY
-          "| Allure HTML | [$allureUrl]($allureUrl) |" >> $env:GITHUB_STEP_SUMMARY
+          if-no-files-found: ignore
