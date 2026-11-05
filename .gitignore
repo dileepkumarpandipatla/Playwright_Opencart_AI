@@ -1,31 +1,63 @@
 
-# =============================================================================
-# .gitignore — Files and directories excluded from Git tracking
-# =============================================================================
+# ==================================================
+# 1. DEPENDENCIES
+# ==================================================
 
-#  Dependencies 
 node_modules/
 
+# ==================================================
+# 2. ENVIRONMENT VARIABLES & SECRETS
+# ==================================================
 
-# Environment & secrets 
 .env
+.env.*
+!.env.example
 
-#  Playwright test artifacts 
+# ==================================================
+# 3. PLAYWRIGHT TEST ARTIFACTS
+# ==================================================
+
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
 
-#  Reports 
+# ==================================================
+# 4. REPORTS
+# ==================================================
+
 /reports/
 /allure-results/
 /allure-report/
 /custom-report/
 
-#  Tool / IDE config (local caches, not project files) 
+# ==================================================
+# 5. CUSTOM OUTPUT FOLDERS
+# ==================================================
+
+/testout/
+
+# ==================================================
+# 6. IDE & TOOL CONFIGURATION
+# ==================================================
+
+.vscode/
 .claude/
 .commandcode/
 .playwright-cli/
 .playwright-mcp/
 
+# ==================================================
+# 7. LOGS & TEMPORARY FILES
+# ==================================================
+
+*.log
+*.tmp
+
+# ==================================================
+# 8. OPERATING SYSTEM FILES
+# ==================================================
+
+.DS_Store
+Thumbs.db

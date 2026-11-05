@@ -1,67 +1,107 @@
 
 import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// ==================================================
+// 1. GENERAL TEST CONFIGURATION
+// ==================================================
+
+const isCI = Boolean(process.env.CI);
 
 export default defineConfig({
-
-  // Test Execution Configuration
-  timeout: 30 * 1000, // 30 seconds
   testDir: "./tests",
+  timeout: 30 * 1000,
+
+  expect: {
+    timeout: 10 * 1000,
+  },
+
+  // ==================================================
+  // 2. TEST EXECUTION CONFIGURATION
+  // ==================================================
+
   fullyParallel: true,
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 1 : undefined,
 
-  // Retry and Worker Configuration
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // ==================================================
+  // 3. TEST ARTIFACTS OUTPUT DIRECTORY
+  // ==================================================
 
-  // Reporting Configuration
+  outputDir: "./test-results/execution",
+
+  // ==================================================
+  // 4. REPORTER CONFIGURATION
+  // ==================================================
+
   reporter: [
-    ["list"], // Detailed console output 
-    //['line'], // One-line progress output 
-    //['dot'], // Minimal console output 
-    ["html", { open: "never", outputFolder: "reports" }], // HTML Report 
-    //['json', { outputFile: 'reports/results.json' }], // JSON Report 
-    ["junit", { outputFile: "reports/results.xml" }], // JUnit XML Report 
-    ["./utils/CustomReporter.ts"], // Custom reporter 
-    ["allure-playwright", { outputFolder: "allure-results" }], // Allure Report
+    ["list"], // Console reporter
+    //['line'], // One-line progress output
+    //['dot'],  // Minimal console output
+    //['json', { outputFile: 'reports/results.json' }], // JSON Report
+    ["html", { open: "never", outputFolder: "test-results/playwright" }], // Playwright HTML report
+    ["junit", { outputFile: "test-results/junit/results.xml" }],  // JUnit XML report
+    ["./utils/CustomReporter.ts"],  // Custom reporter
+    ["allure-playwright", { resultsDir: "test-results/allure/results", }] // Allure report results
   ],
 
-  // Common Browser Configuration
+  // ==================================================
+  // 5. COMMON BROWSER CONFIGURATION
+  // ==================================================
+
   use: {
+    // Application URL
+    baseURL: process.env.WEB_APP_URL,
+
+    // Browser execution mode
+    headless: isCI,
+
+    // Failure debugging options
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
-    headless: false,
-    viewport: { width: 1280, height: 720 }, // Set default viewport size for consistency
-    ignoreHTTPSErrors: true, // Ignore SSL errors if necessary
-    permissions: ["geolocation"] // Set necessary permissions for geolocation-based tests
+
+    // Browser window settings
+    viewport: {
+      width: 1280,
+      height: 720,
+    },
+
+    // Browser permissions and security
+    ignoreHTTPSErrors: true,
+    permissions: ["geolocation"],
   },
 
-  // Execute Tests Having Specific Tags
-  grep: /@master/,
+  // ==================================================
+  // 6. BROWSER PROJECT CONFIGURATION
+  // ==================================================
 
-  // Browser Projects Configuration
   projects: [
+    // Chromium
     {
       name: "chromium",
       use: {
-        ...devices["Desktop Chrome"]
-      }
+        ...devices["Desktop Chrome"],
+      },
     },
 
-    /*
+    // Firefox
     {
-        name: "firefox",
-        use: {
-            ...devices["Desktop Firefox"]
-        }
+      name: "firefox",
+      use: {
+        ...devices["Desktop Firefox"],
+      },
     },
 
+    // WebKit
     {
-        name: "webkit",
-        use: {
-            ...devices["Desktop Safari"]
-        }
-    }
-    */
-  ]
-
+      name: "webkit",
+      use: {
+        ...devices["Desktop Safari"],
+      },
+    },
+  ],
 });

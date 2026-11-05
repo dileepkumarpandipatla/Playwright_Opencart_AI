@@ -9,7 +9,8 @@
   "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.6"
+    "@types/node": "^26.6.6",
+    "allure-commandline": "^2.46.1"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -30,7 +31,9 @@
     "test:regression": "playwright test --grep @regression",
     "test:e2e": "playwright test --grep @e2e",
     "test:datadriven": "playwright test --grep @datadriven",
-    "test:master:headed": "playwright test --grep @sanity --headed",
-    "test:sanity:debug": "playwright test --grep @sanity --debug"
+    "test:master:headed": "playwright test --grep @master --headed",
+    "test:sanity:debug": "playwright test --grep @sanity --debug",
+    "report:allure:generate": "allure generate test-results/allure/results --clean -o test-results/allure/report",
+    "report:allure:open": "allure open test-results/allure/report"
   }
 }
