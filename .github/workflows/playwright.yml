@@ -1,5 +1,5 @@
 
-# To run manually: go to your repo → Actions → Playwright Tests → Run workflow → choose your parameters → Run.
+# To run manually: Repository → Actions → Playwright Tests → Run workflow.
 
 name: 🎭 Playwright Tests
 
@@ -44,6 +44,7 @@ on:
 
 jobs:
   test:
+    name: Playwright Automation Tests
     timeout-minutes: 60
     runs-on: windows-latest
 
@@ -134,28 +135,34 @@ jobs:
           Set-Content -Path .env -Value $updatedLines -Encoding utf8
 
       # ==================================================
-      # 🧪 6. RUN PLAYWRIGHT TESTS
+      # 🧪 6. RUN SELECTED PLAYWRIGHT TESTS
       # ==================================================
 
       - name: 🧪 Run Playwright Tests
         shell: pwsh
+        env:
+          CI: "1"
         run: |
           $suite = "${{ github.event.inputs.test_suite || 'test:e2e' }}"
           $browser = "${{ github.event.inputs.browser || 'chromium' }}"
           $mode = "${{ github.event.inputs.mode || 'headless' }}"
 
-          $tag = $suite -replace 'test:', ''
+          $tag = $suite -replace '^test:', ''
           $browserFlag = "--project=$browser"
           $modeFlag = if ($mode -eq 'headed') { '--headed' } else { '' }
 
+          Write-Host "======================================"
           Write-Host "Selected Suite : $suite"
           Write-Host "Selected Tag   : @$tag"
           Write-Host "Browser        : $browser"
           Write-Host "Mode           : $mode"
+          Write-Host "======================================"
 
           npx playwright test --grep "@$tag" $browserFlag $modeFlag
-        env:
-          CI: "1"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
 
       # ==================================================
       # ☕ 7. SETUP JAVA FOR ALLURE
@@ -177,48 +184,69 @@ jobs:
         run: npx allure generate test-results/allure/results --clean -o test-results/allure/report
 
       # ==================================================
-      # 📁 9. PREPARE BOTH REPORTS FOR GITHUB PAGES
+      # 📁 9. PREPARE REPORTS FOR GITHUB PAGES
       # ==================================================
 
       - name: 📁 Prepare Reports for Publishing
         if: always()
         shell: pwsh
         run: |
+
           New-Item -ItemType Directory -Force -Path "pages-site/playwright" | Out-Null
           New-Item -ItemType Directory -Force -Path "pages-site/allure" | Out-Null
 
-          # Copy Playwright report contents (remove nested playwright folder)
-          $playwrightSource = "test-results/playwright/playwright"
+          # ------------------------------------------
+          # 🎭 Find Playwright HTML report automatically
+          # ------------------------------------------
 
-          if (Test-Path "$playwrightSource/index.html") {
-            Copy-Item "$playwrightSource/." "pages-site/playwright/" -Recurse -Force
-            Write-Host "Playwright report copied successfully."
-          }
-          else {
-            throw "Playwright report not found at $playwrightSource/index.html"
-          }
+          $playwrightIndex = Get-ChildItem `
+            -Path "test-results/playwright" `
+            -Filter "index.html" `
+            -File `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
 
-          # Copy Allure report contents (remove nested report folder)
-          $allureSource = "test-results/allure/report"
-
-          if (Test-Path "$allureSource/index.html") {
-            Copy-Item "$allureSource/." "pages-site/allure/" -Recurse -Force
-            Write-Host "Allure report copied successfully."
-          }
-          else {
-            throw "Allure report not found at $allureSource/index.html"
+          if ($null -eq $playwrightIndex) {
+            throw "Playwright HTML report index.html was not found."
           }
 
-          # Validate final published structure
-          if (-not (Test-Path "pages-site/playwright/index.html")) {
-            throw "Published Playwright index.html is missing."
+          $playwrightSource = $playwrightIndex.Directory.FullName
+
+          Write-Host "Playwright report found: $($playwrightIndex.FullName)"
+
+          Copy-Item "$playwrightSource/*" `
+            "pages-site/playwright/" `
+            -Recurse -Force
+
+          # ------------------------------------------
+          # 📊 Find Allure HTML report
+          # ------------------------------------------
+
+          $allureIndex = Get-ChildItem `
+            -Path "test-results/allure/report" `
+            -Filter "index.html" `
+            -File `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if ($null -eq $allureIndex) {
+            throw "Allure HTML report index.html was not found."
           }
 
-          if (-not (Test-Path "pages-site/allure/index.html")) {
-            throw "Published Allure index.html is missing."
-          }
+          $allureSource = $allureIndex.Directory.FullName
 
-          # Create landing page
+          Write-Host "Allure report found: $($allureIndex.FullName)"
+
+          Copy-Item "$allureSource/*" `
+            "pages-site/allure/" `
+            -Recurse -Force
+
+          # ------------------------------------------
+          # 🏠 Create landing page
+          # ------------------------------------------
+
           $html = @'
           <!DOCTYPE html>
           <html>
@@ -237,13 +265,27 @@ jobs:
 
           Set-Content -Path "pages-site/index.html" -Value $html -Encoding utf8
 
+          # ------------------------------------------
+          # ✅ Validate final published reports
+          # ------------------------------------------
+
+          if (-not (Test-Path "pages-site/playwright/index.html")) {
+            throw "Published Playwright report is missing."
+          }
+
+          if (-not (Test-Path "pages-site/allure/index.html")) {
+            throw "Published Allure report is missing."
+          }
+
           Write-Host "======================================"
-          Write-Host "FINAL PUBLISHED FOLDER STRUCTURE"
-          Get-ChildItem "pages-site" -Recurse | Select-Object FullName
+          Write-Host "BOTH REPORTS ARE READY"
           Write-Host "======================================"
 
+          Get-ChildItem "pages-site" -Recurse |
+            Select-Object FullName
+
       # ==================================================
-      # 📤 10. UPLOAD PLAYWRIGHT HTML REPORT
+      # 📤 10. UPLOAD PLAYWRIGHT REPORT
       # ==================================================
 
       - name: 📊 Upload Playwright HTML Report
