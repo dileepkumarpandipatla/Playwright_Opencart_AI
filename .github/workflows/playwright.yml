@@ -21,7 +21,7 @@ on:
           - test:api
           - test:web
           - test:datadriven
-        default: "test:e2e"
+        default: "test:api"
       browser:
         description: "Select browser"
         type: choice
