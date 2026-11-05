@@ -1,30 +1,20 @@
 
-# ==================================================
-# 🚀 1. WORKFLOW NAME
-# ==================================================
+# To run manually: go to your repo → Actions → Playwright Tests → Run workflow → choose your parameters → Run.
 
-name: Playwright Automation Tests
-
-# ==================================================
-# 🎯 2. WORKFLOW TRIGGERS
-# ==================================================
+name: 🎭 Playwright Tests
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
 
   pull_request:
-    branches:
-      - master
+    branches: [master]
 
   workflow_dispatch:
     inputs:
       test_suite:
-        description: "Select Test Suite"
-        required: true
+        description: "Select test suite"
         type: choice
-        default: "test:e2e"
         options:
           - test:master
           - test:sanity
@@ -33,99 +23,81 @@ on:
           - test:api
           - test:web
           - test:datadriven
+        default: "test:e2e"
 
       browser:
-        description: "Select Browser"
-        required: true
+        description: "Select browser"
         type: choice
-        default: "chromium"
         options:
           - chromium
           - firefox
           - webkit
+        default: "chromium"
 
       mode:
-        description: "Select Browser Execution Mode"
-        required: true
+        description: "Run mode"
         type: choice
-        default: "headless"
         options:
           - headless
           - headed
-
-# ==================================================
-# ⚙️ 3. JOB CONFIGURATION
-# ==================================================
+        default: "headless"
 
 jobs:
-  playwright-tests:
-    name: Playwright Tests
-
-    runs-on: windows-latest
+  test:
     timeout-minutes: 60
+    runs-on: windows-latest
 
     permissions:
       contents: read
       pages: write
       id-token: write
 
-    # ==================================================
-    # 🔐 4. ENVIRONMENT VARIABLES & SECRETS
-    # ==================================================
-
-    env:
-      CI: true
-
-      SELECTED_SUITE: ${{ inputs.test_suite }}
-      SELECTED_BROWSER: ${{ inputs.browser }}
-      SELECTED_MODE: ${{ inputs.mode }}
-
-      APP_EMAIL: ${{ secrets.APP_EMAIL }}
-      APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-      API_PASSWORD: ${{ secrets.API_PASSWORD }}
-      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-
     steps:
 
       # ==================================================
-      # 📥 5. CHECKOUT SOURCE CODE
+      # 📥 1. CHECKOUT REPOSITORY
       # ==================================================
 
-      - name: Checkout Repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
       # ==================================================
-      # 🟢 6. SETUP NODE.JS
+      # 🟢 2. SETUP NODE.JS
       # ==================================================
 
-      - name: Setup Node.js
+      - name: 🟢 Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
       # ==================================================
-      # 📦 7. INSTALL PROJECT DEPENDENCIES
+      # 📦 3. INSTALL DEPENDENCIES
       # ==================================================
 
-      - name: Install Dependencies
+      - name: 📦 Install Dependencies
         run: npm ci
 
       # ==================================================
-      # 🌐 8. INSTALL PLAYWRIGHT BROWSERS
+      # 🎭 4. INSTALL PLAYWRIGHT BROWSERS
       # ==================================================
 
-      - name: Install Playwright Browsers
-        run: npx playwright install
+      - name: 🎭 Install Playwright Browsers
+        run: npx playwright install --with-deps
 
       # ==================================================
-      # 🔑 9. CREATE ENVIRONMENT FILE
+      # 🔐 5. CREATE .ENV FILE WITH GITHUB SECRETS
       # ==================================================
 
-      - name: Create .env File
+      - name: ⚙️ Create .env File
         shell: pwsh
+        env:
+          APP_EMAIL: ${{ secrets.APP_EMAIL }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          API_PASSWORD: ${{ secrets.API_PASSWORD }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           Copy-Item .env.example .env
 
@@ -159,127 +131,34 @@ jobs:
           Set-Content -Path .env -Value $updatedLines -Encoding utf8
 
       # ==================================================
-      # 🧪 10. SELECT & EXECUTE TEST SUITE
+      # 🧪 6. RUN PLAYWRIGHT TESTS
       # ==================================================
 
-      - name: Run Playwright Tests
+      - name: 🧪 Run Playwright Tests
         shell: pwsh
         run: |
+          $suite = "${{ github.event.inputs.test_suite || 'test:e2e' }}"
+          $browser = "${{ github.event.inputs.browser || 'chromium' }}"
+          $mode = "${{ github.event.inputs.mode || 'headless' }}"
 
-          # --------------------------------------
-          # Read selected values
-          # --------------------------------------
+          $tag = $suite -replace 'test:', ''
+          $browserFlag = "--project=$browser"
+          $modeFlag = if ($mode -eq 'headed') { '--headed' } else { '' }
 
-          $suite = $env:SELECTED_SUITE
-          $browser = $env:SELECTED_BROWSER
-          $mode = $env:SELECTED_MODE
+          Write-Host "Selected Suite : $suite"
+          Write-Host "Selected Tag   : @$tag"
+          Write-Host "Browser        : $browser"
+          Write-Host "Mode           : $mode"
 
-          # --------------------------------------
-          # Default values based on trigger
-          # --------------------------------------
-
-          if ([string]::IsNullOrWhiteSpace($suite)) {
-            if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
-              $suite = "test:e2e"
-            }
-            else {
-              $suite = "test:master"
-            }
-          }
-
-          if ([string]::IsNullOrWhiteSpace($browser)) {
-            $browser = "chromium"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($mode)) {
-            $mode = "headless"
-          }
-
-          # --------------------------------------
-          # Map selected suite to respective tag
-          # --------------------------------------
-
-          $tag = switch ($suite) {
-
-            "test:master"     { "@master" }
-            "test:sanity"     { "@sanity" }
-            "test:regression" { "@regression" }
-            "test:e2e"        { "@e2e" }
-            "test:api"        { "@api" }
-            "test:web"        { "@web" }
-            "test:datadriven" { "@datadriven" }
-
-            default {
-              Write-Error "Invalid test suite selected: $suite"
-              exit 1
-            }
-          }
-
-          # --------------------------------------
-          # Display selected configuration
-          # --------------------------------------
-
-          Write-Host "=========================================="
-          Write-Host "Selected Test Suite : $suite"
-          Write-Host "Selected Test Tag   : $tag"
-          Write-Host "Selected Browser    : $browser"
-          Write-Host "Execution Mode      : $mode"
-          Write-Host "=========================================="
-
-          # --------------------------------------
-          # Discover matching test cases
-          # --------------------------------------
-
-          Write-Host "Discovering matching test cases..."
-
-          $listArgs = @(
-            "playwright",
-            "test",
-            "--list",
-            "--grep=$tag",
-            "--project=$browser"
-          )
-
-          & npx.cmd @listArgs
-
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          # --------------------------------------
-          # Build execution arguments
-          # --------------------------------------
-
-          $playwrightArgs = @(
-            "playwright",
-            "test",
-            "--grep=$tag",
-            "--project=$browser"
-          )
-
-          if ($mode -eq "headed") {
-            $playwrightArgs += "--headed"
-          }
-
-          # --------------------------------------
-          # Execute selected tests
-          # --------------------------------------
-
-          Write-Host "Executing selected test cases..."
-
-          Write-Host "Command: npx.cmd $($playwrightArgs -join ' ')"
-
-          & npx.cmd @playwrightArgs
-
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          npx playwright test --grep "@$tag" $browserFlag $modeFlag --output=test-results
+        env:
+          CI: "1"
 
       # ==================================================
-      # ☕ 11. SETUP JAVA FOR ALLURE
+      # ☕ 7. SETUP JAVA FOR ALLURE
       # ==================================================
 
-      - name: Setup Java
+      - name: ☕ Setup Java
         if: always() && hashFiles('test-results/allure/results/**') != ''
         uses: actions/setup-java@v4
         with:
@@ -287,37 +166,76 @@ jobs:
           java-version: "17"
 
       # ==================================================
-      # 📊 12. GENERATE ALLURE HTML REPORT
+      # 📊 8. GENERATE ALLURE HTML REPORT
       # ==================================================
 
-      - name: Generate Allure Report
+      - name: 📊 Generate Allure Report
         if: always() && hashFiles('test-results/allure/results/**') != ''
         run: npx allure generate test-results/allure/results --clean -o test-results/allure/report
 
       # ==================================================
-      # 🌐 13. UPLOAD ALLURE REPORT
+      # 📤 9. UPLOAD PLAYWRIGHT HTML REPORT
       # ==================================================
 
-      - name: Upload Allure Report
+      - name: 📊 Upload Playwright HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: test-results/playwright/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ==================================================
+      # 📋 10. UPLOAD CUSTOM REPORT
+      # ==================================================
+
+      - name: 📋 Upload Custom Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-report
+          path: test-results/custom/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ==================================================
+      # 📈 11. UPLOAD ALLURE RESULTS
+      # ==================================================
+
+      - name: 📈 Upload Allure Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: test-results/allure/results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ==================================================
+      # 🌐 12. UPLOAD ALLURE REPORT TO GITHUB PAGES
+      # ==================================================
+
+      - name: 🌐 Upload Allure Report
         if: always() && github.event_name != 'pull_request' && hashFiles('test-results/allure/report/**') != ''
         uses: actions/upload-pages-artifact@v4
         with:
           path: test-results/allure/report
 
       # ==================================================
-      # 🚀 14. DEPLOY ALLURE REPORT
+      # 🚀 13. DEPLOY ALLURE REPORT
       # ==================================================
 
-      - name: Deploy Allure Report
+      - name: 🚀 Deploy Allure Report
         if: always() && github.event_name != 'pull_request' && hashFiles('test-results/allure/report/**') != ''
         id: deployment
         uses: actions/deploy-pages@v4
 
       # ==================================================
-      # 🔗 15. DISPLAY SHAREABLE REPORT URL
+      # 🔗 14. DISPLAY SHAREABLE ALLURE URL
       # ==================================================
 
-      - name: Display Allure Report URL
+      - name: 🔗 Display Allure Report URL
         if: always() && steps.deployment.outputs.page_url != ''
         shell: pwsh
         run: |
@@ -327,24 +245,3 @@ jobs:
 
           "### 📊 Allure Test Report" >> $env:GITHUB_STEP_SUMMARY
           "[$url]($url)" >> $env:GITHUB_STEP_SUMMARY
-
-      # ==================================================
-      # 📤 16. UPLOAD TEST REPORT ARTIFACTS
-      # ==================================================
-
-      - name: Upload Test Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-reports
-          path: test-results/
-          if-no-files-found: warn
-          retention-days: 30
-
-    # ==================================================
-    # 🌍 17. GITHUB PAGES ENVIRONMENT
-    # ==================================================
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
