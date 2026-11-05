@@ -24,7 +24,7 @@ on:
         description: "Select Test Suite"
         required: true
         type: choice
-        default: "test:master"
+        default: "test:e2e"
         options:
           - test:master
           - test:sanity
