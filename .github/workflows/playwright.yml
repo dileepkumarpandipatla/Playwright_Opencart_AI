@@ -187,19 +187,47 @@ jobs:
           New-Item -ItemType Directory -Force -Path "pages-site/playwright" | Out-Null
           New-Item -ItemType Directory -Force -Path "pages-site/allure" | Out-Null
 
+          # Copy Playwright report
           if (Test-Path "test-results/playwright/index.html") {
             Copy-Item "test-results/playwright/." "pages-site/playwright" -Recurse -Force
+            Write-Host "Playwright report copied successfully."
           }
           else {
-            Write-Warning "Playwright HTML report was not generated."
+            throw "Playwright HTML report index.html was not found. Check playwright.config.ts outputFolder."
           }
 
+          # Copy Allure report
           if (Test-Path "test-results/allure/report/index.html") {
             Copy-Item "test-results/allure/report/." "pages-site/allure" -Recurse -Force
+            Write-Host "Allure report copied successfully."
           }
           else {
-            Write-Warning "Allure HTML report was not generated."
+            throw "Allure HTML report index.html was not found."
           }
+
+          # Create landing page
+          $html = @'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Automation Test Reports</title>
+          </head>
+          <body>
+            <h1>Automation Test Reports</h1>
+            <ul>
+              <li><a href="./playwright/">Playwright HTML Report</a></li>
+              <li><a href="./allure/">Allure HTML Report</a></li>
+            </ul>
+          </body>
+          </html>
+          '@
+
+          Set-Content -Path "pages-site/index.html" -Value $html -Encoding utf8
+
+          Write-Host "======================================"
+          Write-Host "Published report files:"
+          Get-ChildItem "pages-site" -Recurse | Select-Object FullName
+          Write-Host "======================================"
 
       # ==================================================
       # 📤 10. UPLOAD PLAYWRIGHT HTML REPORT
@@ -254,10 +282,10 @@ jobs:
         if: always() && steps.deployment.outputs.page_url != ''
         shell: pwsh
         run: |
-          $baseUrl = "${{ steps.deployment.outputs.page_url }}"
+          $baseUrl = "${{ steps.deployment.outputs.page_url }}".TrimEnd('/')
 
-          $playwrightUrl = "${baseUrl}playwright/"
-          $allureUrl = "${baseUrl}allure/"
+          $playwrightUrl = "$baseUrl/playwright/"
+          $allureUrl = "$baseUrl/allure/"
 
           Write-Host "======================================"
           Write-Host "PLAYWRIGHT HTML REPORT:"
