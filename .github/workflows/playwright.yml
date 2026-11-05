@@ -66,6 +66,8 @@ jobs:
 
     permissions:
       contents: read
+      pages: write
+      id-token: write
 
     # ==================================================
     # 🔐 4. ENVIRONMENT VARIABLES & SECRETS
@@ -163,11 +165,19 @@ jobs:
       - name: Run Playwright Tests
         shell: pwsh
         run: |
+
+          # --------------------------------------
+          # Read selected values
+          # --------------------------------------
+
           $suite = $env:SELECTED_SUITE
           $browser = $env:SELECTED_BROWSER
           $mode = $env:SELECTED_MODE
 
-          # Default values for automatic push and pull request runs
+          # --------------------------------------
+          # Default values for push and PR runs
+          # --------------------------------------
+
           if ([string]::IsNullOrWhiteSpace($suite)) {
             $suite = "test:master"
           }
@@ -180,18 +190,64 @@ jobs:
             $mode = "headless"
           }
 
-          # Extract tag name
-          $tag = $suite -replace "^test:", ""
+          # --------------------------------------
+          # Explicit test suite to tag mapping
+          # --------------------------------------
 
+          $tag = switch ($suite) {
+            "test:master"     { "@master" }
+            "test:sanity"     { "@sanity" }
+            "test:regression" { "@regression" }
+            "test:e2e"        { "@e2e" }
+            "test:api"        { "@api" }
+            "test:web"        { "@web" }
+            "test:datadriven" { "@datadriven" }
+
+            default {
+              Write-Error "Invalid test suite: $suite"
+              exit 1
+            }
+          }
+
+          # --------------------------------------
+          # Display execution configuration
+          # --------------------------------------
+
+          Write-Host "=========================================="
           Write-Host "Selected Test Suite : $suite"
+          Write-Host "Selected Test Tag   : $tag"
           Write-Host "Selected Browser    : $browser"
           Write-Host "Execution Mode      : $mode"
+          Write-Host "=========================================="
 
-          # Build Playwright command
-          $playwrightArgs = @(
+          # --------------------------------------
+          # Discover matching test cases
+          # --------------------------------------
+
+          Write-Host "Discovering matching test cases..."
+
+          $listArgs = @(
+            "playwright",
             "test",
-            "--grep",
-            "@$tag",
+            "--list",
+            "--grep=$tag",
+            "--project=$browser"
+          )
+
+          & npx.cmd @listArgs
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          # --------------------------------------
+          # Build execution command
+          # --------------------------------------
+
+          $playwrightArgs = @(
+            "playwright",
+            "test",
+            "--grep=$tag",
             "--project=$browser"
           )
 
@@ -199,7 +255,15 @@ jobs:
             $playwrightArgs += "--headed"
           }
 
-          npx playwright @playwrightArgs
+          # --------------------------------------
+          # Execute selected test cases
+          # --------------------------------------
+
+          Write-Host "Executing selected test cases..."
+
+          Write-Host "Command: npx.cmd $($playwrightArgs -join ' ')"
+
+          & npx.cmd @playwrightArgs
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -225,7 +289,41 @@ jobs:
         run: npx allure generate test-results/allure/results --clean -o test-results/allure/report
 
       # ==================================================
-      # 📤 13. UPLOAD TEST REPORTS
+      # 🌐 13. UPLOAD ALLURE REPORT TO GITHUB PAGES
+      # ==================================================
+
+      - name: Upload Allure Report
+        if: always() && github.event_name != 'pull_request' && hashFiles('test-results/allure/report/**') != ''
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: test-results/allure/report
+
+      # ==================================================
+      # 🚀 14. DEPLOY ALLURE REPORT
+      # ==================================================
+
+      - name: Deploy Allure Report
+        if: always() && github.event_name != 'pull_request' && hashFiles('test-results/allure/report/**') != ''
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      # ==================================================
+      # 🔗 15. DISPLAY ALLURE REPORT URL
+      # ==================================================
+
+      - name: Display Allure Report URL
+        if: always() && steps.deployment.outputs.page_url != ''
+        shell: pwsh
+        run: |
+          $url = "${{ steps.deployment.outputs.page_url }}"
+
+          Write-Host "Allure Report URL: $url"
+
+          "### 📊 Allure Report" >> $env:GITHUB_STEP_SUMMARY
+          "View your report: [$url]($url)" >> $env:GITHUB_STEP_SUMMARY
+
+      # ==================================================
+      # 📤 16. UPLOAD TEST REPORT ARTIFACTS
       # ==================================================
 
       - name: Upload Test Reports
@@ -236,3 +334,11 @@ jobs:
           path: test-results/
           if-no-files-found: warn
           retention-days: 30
+
+    # ==================================================
+    # 🌍 17. GITHUB PAGES ENVIRONMENT
+    # ==================================================
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
