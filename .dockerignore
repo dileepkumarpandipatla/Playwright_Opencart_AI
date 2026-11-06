@@ -1,35 +1,30 @@
 # Dependencies
 node_modules
 
-#  Environment & secrets
-#.env
-#.env.example
+# Environment & secrets
+.env
 
-#  Test artifacts (bind-mounted at runtime, not part of the image)
-test-results
-reports
-allure-results
-allure-report
-custom-report
-playwright-report
-blob-report
+# Test artifacts
+test-results/
+reports/
+allure-results/
+allure-report/
+custom-report/
+playwright-report/
+blob-report/
 playwright/
 
-#  Documentation & prompts (not needed at runtime)
+# Documentation
 docs/
 prompts/
 *.md
 
-#  CI/CD & platform-specific config
+# CI/CD
 Jenkinsfile
 env_setup.bat
 docker-compose.yml
 
-#  Docker build self-exclusion
-Dockerfile
-.dockerignore
-
-#  Version control & meta
+# Version control
 .git
 .gitignore
 .gitattributes
@@ -37,7 +32,7 @@ Dockerfile
 .claude
 .commandcode
 
-# Playwright / IDE cache & config
+# IDE
 .playwright/
 .playwright-cli/
 .playwright-mcp/

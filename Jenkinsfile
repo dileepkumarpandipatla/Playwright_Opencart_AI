@@ -27,24 +27,24 @@ pipeline {
                 'web',
                 'datadriven'
             ],
-            description: 'Select the test suite'
+            description: 'Select Playwright test suite'
         )
 
         choice(
             name: 'BROWSER',
             choices: ['chromium', 'firefox', 'webkit'],
-            description: 'Select the browser'
+            description: 'Select browser'
         )
 
         choice(
             name: 'MODE',
             choices: ['headless', 'headed'],
-            description: 'Select browser execution mode'
+            description: 'Select execution mode'
         )
     }
 
     // ==================================================
-    // 2. ENVIRONMENT VARIABLES
+    // 2. ENVIRONMENT
     // ==================================================
 
     environment {
@@ -70,22 +70,22 @@ pipeline {
                 powershell '''
                     $ErrorActionPreference = 'Continue'
 
-                    docker --version
+                    & docker --version
 
                     if ($LASTEXITCODE -ne 0) {
                         throw "Docker CLI is not available"
                     }
 
-                    docker compose version
+                    & docker compose version
 
                     if ($LASTEXITCODE -ne 0) {
                         throw "Docker Compose is not available"
                     }
 
-                    docker info
+                    & docker info
 
                     if ($LASTEXITCODE -ne 0) {
-                        throw "Cannot connect to Docker Engine. Check Docker Desktop."
+                        throw "Cannot connect to Docker Engine"
                     }
 
                     Write-Host "Docker Engine is available"
@@ -94,7 +94,7 @@ pipeline {
         }
 
         // ==================================================
-        // 4. CHECKOUT SOURCE CODE
+        // 4. CHECKOUT
         // ==================================================
 
         stage('📥 Checkout Source Code') {
@@ -107,7 +107,7 @@ pipeline {
         }
 
         // ==================================================
-        // 5. VALIDATE DOCKER FILES
+        // 5. VALIDATE REQUIRED FILES
         // ==================================================
 
         stage('🔍 Validate Docker Files') {
@@ -120,6 +120,7 @@ pipeline {
                         "Dockerfile",
                         "docker-compose.yml",
                         "docker-entrypoint.sh",
+                        ".dockerignore",
                         ".env.example",
                         "package.json",
                         "package-lock.json"
@@ -134,13 +135,73 @@ pipeline {
                         Write-Host "Verified: $file"
                     }
 
-                    Write-Host "All required project files are available"
+                    Write-Host "All required files are available"
                 '''
             }
         }
 
         // ==================================================
-        // 6. PREPARE ENVIRONMENT USING JENKINS SECRETS
+        // 6. VERIFY JENKINS WORKSPACE
+        // ==================================================
+
+        stage('🔎 Verify Jenkins Docker Workspace') {
+            steps {
+
+                powershell '''
+                    $ErrorActionPreference = 'Stop'
+
+                    Write-Host "=================================="
+                    Write-Host "Jenkins Workspace Diagnostics"
+                    Write-Host "=================================="
+
+                    Write-Host "Workspace: $PWD"
+
+                    Write-Host "`nLatest Git Commit:"
+
+                    git log -1 --oneline
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Unable to read Git commit"
+                    }
+
+                    Write-Host "`nChecking Docker Entrypoint:"
+
+                    if (!(Test-Path ".\\docker-entrypoint.sh")) {
+                        throw "docker-entrypoint.sh missing from Jenkins workspace"
+                    }
+
+                    Get-Item ".\\docker-entrypoint.sh" |
+                        Format-List FullName, Length, LastWriteTime
+
+                    Write-Host "`nChecking Effective Docker Compose Volumes:"
+
+                    $composeOutput = & docker compose config --format json
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Unable to read Docker Compose configuration"
+                    }
+
+                    $composeJson = ($composeOutput -join "`n") |
+                        ConvertFrom-Json
+
+                    $volumes = $composeJson.services.'playwright-tests'.volumes
+
+                    foreach ($volume in $volumes) {
+
+                        Write-Host "Mount: $($volume.target)"
+
+                        if ($volume.target -eq '/app') {
+                            throw "Project root is mounted over /app. Remove the .:/app volume."
+                        }
+                    }
+
+                    Write-Host "`nWorkspace diagnostics completed successfully"
+                '''
+            }
+        }
+
+        // ==================================================
+        // 7. PREPARE ENVIRONMENT
         // ==================================================
 
         stage('🔐 Prepare Environment') {
@@ -246,7 +307,7 @@ pipeline {
         }
 
         // ==================================================
-        // 7. CLEAN OLD REPORTS
+        // 8. CLEAN PREVIOUS REPORTS
         // ==================================================
 
         stage('🧹 Clean Previous Reports') {
@@ -269,8 +330,9 @@ pipeline {
                             Remove-Item $folder -Recurse -Force
                         }
 
-                        New-Item -ItemType Directory -Path $folder -Force |
-                            Out-Null
+                        New-Item -ItemType Directory `
+                            -Path $folder `
+                            -Force | Out-Null
                     }
 
                     Write-Host "Previous reports cleaned"
@@ -279,7 +341,7 @@ pipeline {
         }
 
         // ==================================================
-        // 8. BUILD DOCKER IMAGE
+        // 9. BUILD DOCKER IMAGE
         // ==================================================
 
         stage('🐳 Docker Build') {
@@ -290,19 +352,36 @@ pipeline {
                 powershell '''
                     $ErrorActionPreference = 'Continue'
 
-                    docker compose build 2>&1
+                    & docker compose build
 
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Docker image build failed"
+                    $buildExitCode = $LASTEXITCODE
+
+                    if ($buildExitCode -ne 0) {
+                        throw "Docker image build failed. Exit code: $buildExitCode"
                     }
 
                     Write-Host "Docker image built successfully"
+
+                    Write-Host "`nVerifying entrypoint inside Docker image"
+
+                    & docker run --rm `
+                        --entrypoint /bin/bash `
+                        playwright-opencart `
+                        -lc "test -f /app/docker-entrypoint.sh && test -x /app/docker-entrypoint.sh && echo 'Entrypoint verified successfully'"
+
+                    $verifyExitCode = $LASTEXITCODE
+
+                    if ($verifyExitCode -ne 0) {
+                        throw "Entrypoint verification failed inside Docker image"
+                    }
+
+                    Write-Host "Docker image verification successful"
                 '''
             }
         }
 
         // ==================================================
-        // 9. EXECUTE PLAYWRIGHT TESTS IN DOCKER
+        // 10. EXECUTE PLAYWRIGHT TESTS
         // ==================================================
 
         stage('🧪 Execute Playwright Tests') {
@@ -340,10 +419,12 @@ pipeline {
                             Write-Host "Mode    : $env:PW_MODE"
                             Write-Host "=================================="
 
-                            & docker @dockerArgs 2>&1
+                            & docker @dockerArgs
 
-                            if ($LASTEXITCODE -ne 0) {
-                                throw "Playwright tests failed inside Docker"
+                            $dockerExitCode = $LASTEXITCODE
+
+                            if ($dockerExitCode -ne 0) {
+                                throw "Playwright execution failed. Exit code: $dockerExitCode"
                             }
 
                             Write-Host "Playwright execution completed successfully"
@@ -355,7 +436,7 @@ pipeline {
     }
 
     // ==================================================
-    // 10. POST BUILD ACTIONS
+    // 11. POST BUILD ACTIONS
     // ==================================================
 
     post {
@@ -373,10 +454,10 @@ pipeline {
                 powershell '''
                     $ErrorActionPreference = 'Continue'
 
-                    docker compose down --remove-orphans 2>&1
+                    & docker compose down --remove-orphans
 
                     if ($LASTEXITCODE -ne 0) {
-                        Write-Warning "Docker Compose cleanup returned an error"
+                        Write-Warning "Docker cleanup returned an error"
                     }
                     else {
                         Write-Host "Docker cleanup completed"
@@ -400,7 +481,9 @@ pipeline {
 
                     allure(
                         includeProperties: false,
-                        results: [[path: 'allure-results']]
+                        results: [
+                            [path: 'allure-results']
+                        ]
                     )
                 }
 
@@ -436,7 +519,7 @@ pipeline {
                 )
 
                 // ------------------------------------------
-                // Remove Sensitive Environment File
+                // Remove .env
                 // ------------------------------------------
 
                 powershell '''
@@ -449,24 +532,48 @@ pipeline {
         }
 
         // ==================================================
-        // 11. SUCCESS NOTIFICATION
+        // 12. SUCCESS EMAIL
         // ==================================================
 
         success {
 
             emailext(
+
                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
 
                 body: """
                     <h2>Playwright Docker Automation - SUCCESS</h2>
 
                     <table border="1" cellpadding="8">
-                        <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
-                        <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
-                        <tr><td><b>Suite</b></td><td>${params.TEST_SUITE}</td></tr>
-                        <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
-                        <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
-                        <tr><td><b>Status</b></td><td>SUCCESS</td></tr>
+                        <tr>
+                            <td><b>Job</b></td>
+                            <td>${env.JOB_NAME}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Build</b></td>
+                            <td>#${env.BUILD_NUMBER}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Suite</b></td>
+                            <td>${params.TEST_SUITE}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Browser</b></td>
+                            <td>${params.BROWSER}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Mode</b></td>
+                            <td>${params.MODE}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Status</b></td>
+                            <td>SUCCESS</td>
+                        </tr>
                     </table>
 
                     <p>
@@ -484,24 +591,48 @@ pipeline {
         }
 
         // ==================================================
-        // 12. FAILURE NOTIFICATION
+        // 13. FAILURE EMAIL
         // ==================================================
 
         failure {
 
             emailext(
+
                 subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
 
                 body: """
                     <h2>Playwright Docker Automation - FAILED</h2>
 
                     <table border="1" cellpadding="8">
-                        <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
-                        <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
-                        <tr><td><b>Suite</b></td><td>${params.TEST_SUITE}</td></tr>
-                        <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
-                        <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
-                        <tr><td><b>Status</b></td><td>FAILED</td></tr>
+                        <tr>
+                            <td><b>Job</b></td>
+                            <td>${env.JOB_NAME}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Build</b></td>
+                            <td>#${env.BUILD_NUMBER}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Suite</b></td>
+                            <td>${params.TEST_SUITE}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Browser</b></td>
+                            <td>${params.BROWSER}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Mode</b></td>
+                            <td>${params.MODE}</td>
+                        </tr>
+
+                        <tr>
+                            <td><b>Status</b></td>
+                            <td>FAILED</td>
+                        </tr>
                     </table>
 
                     <p>
@@ -519,10 +650,11 @@ pipeline {
         }
 
         // ==================================================
-        // 13. ABORTED
+        // 14. ABORTED
         // ==================================================
 
         aborted {
+
             echo 'Playwright Docker pipeline was aborted'
         }
     }
