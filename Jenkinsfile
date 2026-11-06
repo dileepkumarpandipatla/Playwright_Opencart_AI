@@ -94,7 +94,7 @@ pipeline {
         }
 
         // ==================================================
-        // 4. CHECKOUT
+        // 4. CHECKOUT SOURCE CODE
         // ==================================================
 
         stage('📥 Checkout Source Code') {
@@ -141,67 +141,7 @@ pipeline {
         }
 
         // ==================================================
-        // 6. VERIFY JENKINS WORKSPACE
-        // ==================================================
-
-        stage('🔎 Verify Jenkins Docker Workspace') {
-            steps {
-
-                powershell '''
-                    $ErrorActionPreference = 'Stop'
-
-                    Write-Host "=================================="
-                    Write-Host "Jenkins Workspace Diagnostics"
-                    Write-Host "=================================="
-
-                    Write-Host "Workspace: $PWD"
-
-                    Write-Host "`nLatest Git Commit:"
-
-                    git log -1 --oneline
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Unable to read Git commit"
-                    }
-
-                    Write-Host "`nChecking Docker Entrypoint:"
-
-                    if (!(Test-Path ".\\docker-entrypoint.sh")) {
-                        throw "docker-entrypoint.sh missing from Jenkins workspace"
-                    }
-
-                    Get-Item ".\\docker-entrypoint.sh" |
-                        Format-List FullName, Length, LastWriteTime
-
-                    Write-Host "`nChecking Effective Docker Compose Volumes:"
-
-                    $composeOutput = & docker compose config --format json
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Unable to read Docker Compose configuration"
-                    }
-
-                    $composeJson = ($composeOutput -join "`n") |
-                        ConvertFrom-Json
-
-                    $volumes = $composeJson.services.'playwright-tests'.volumes
-
-                    foreach ($volume in $volumes) {
-
-                        Write-Host "Mount: $($volume.target)"
-
-                        if ($volume.target -eq '/app') {
-                            throw "Project root is mounted over /app. Remove the .:/app volume."
-                        }
-                    }
-
-                    Write-Host "`nWorkspace diagnostics completed successfully"
-                '''
-            }
-        }
-
-        // ==================================================
-        // 7. PREPARE ENVIRONMENT
+        // 6. PREPARE ENVIRONMENT USING JENKINS CREDENTIALS
         // ==================================================
 
         stage('🔐 Prepare Environment') {
@@ -307,6 +247,94 @@ pipeline {
         }
 
         // ==================================================
+        // 7. VERIFY JENKINS DOCKER WORKSPACE
+        // ==================================================
+
+        stage('🔎 Verify Jenkins Docker Workspace') {
+            steps {
+
+                powershell '''
+                    $ErrorActionPreference = 'Continue'
+
+                    Write-Host "=================================="
+                    Write-Host "Jenkins Workspace Diagnostics"
+                    Write-Host "=================================="
+
+                    Write-Host "Workspace: $PWD"
+
+                    Write-Host "`nLatest Git Commit:"
+
+                    git log -1 --oneline
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Unable to read Git commit"
+                    }
+
+                    # Verify entrypoint
+
+                    Write-Host "`nChecking Docker Entrypoint:"
+
+                    if (!(Test-Path ".\\docker-entrypoint.sh")) {
+                        throw "docker-entrypoint.sh missing from Jenkins workspace"
+                    }
+
+                    Get-Item ".\\docker-entrypoint.sh" |
+                        Format-List FullName, Length, LastWriteTime
+
+                    # Verify .env without displaying its contents
+
+                    Write-Host "`nChecking Environment File:"
+
+                    if (!(Test-Path ".env" -PathType Leaf)) {
+                        throw ".env file was not created"
+                    }
+
+                    Write-Host ".env file exists"
+
+                    # Validate Compose configuration without printing secrets
+
+                    Write-Host "`nValidating Docker Compose configuration:"
+
+                    & docker compose config --quiet
+
+                    $composeExitCode = $LASTEXITCODE
+
+                    if ($composeExitCode -ne 0) {
+                        throw "Docker Compose configuration validation failed"
+                    }
+
+                    Write-Host "Docker Compose configuration is valid"
+
+                    # Check that the project root is not mounted over /app
+
+                    Write-Host "`nChecking Docker volume configuration:"
+
+                    $composeJson = & docker compose config --format json
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Unable to read Docker Compose configuration"
+                    }
+
+                    $composeConfig = ($composeJson -join "`n") |
+                        ConvertFrom-Json
+
+                    $volumes = $composeConfig.services.'playwright-tests'.volumes
+
+                    foreach ($volume in $volumes) {
+
+                        Write-Host "Volume target: $($volume.target)"
+
+                        if ($volume.target -eq '/app') {
+                            throw "Project root mount detected on /app. Remove .:/app from docker-compose.yml"
+                        }
+                    }
+
+                    Write-Host "`nWorkspace diagnostics completed successfully"
+                '''
+            }
+        }
+
+        // ==================================================
         // 8. CLEAN PREVIOUS REPORTS
         // ==================================================
 
@@ -362,7 +390,9 @@ pipeline {
 
                     Write-Host "Docker image built successfully"
 
-                    Write-Host "`nVerifying entrypoint inside Docker image"
+                    # Verify entrypoint inside image
+
+                    Write-Host "`nVerifying Docker entrypoint inside image"
 
                     & docker run --rm `
                         --entrypoint /bin/bash `
@@ -519,7 +549,7 @@ pipeline {
                 )
 
                 // ------------------------------------------
-                // Remove .env
+                // Remove Sensitive .env File
                 // ------------------------------------------
 
                 powershell '''
