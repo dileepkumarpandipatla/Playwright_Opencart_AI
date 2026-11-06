@@ -607,16 +607,20 @@ pipeline {
                     </table>
 
                     <p>
-                        <a href="${env.BUILD_URL}">
-                            Open Jenkins Build
-                        </a>
+                        <a href="${env.BUILD_URL}">Open Jenkins Build</a> |
+                        <a href="${env.BUILD_URL}console">Open Console Output</a> |
+                        <a href="${env.BUILD_URL}Playwright_20HTML_20Report/">Open Playwright HTML Report</a> |
+                        <a href="${env.BUILD_URL}allure/">Open Allure Report</a> |
+                        <a href="${env.BUILD_URL}artifact/">Download Build Artifacts</a>
                     </p>
 
                     <p>Playwright tests completed successfully inside Docker.</p>
                 """,
 
-                to: 'dileepkumarpaidi@gmail.com',
-                mimeType: 'text/html'
+                to: 'dileepkumarpaidi@gmail.com', //Replace with the recipient's email address
+                from: "dileepkumarbennavara@gmail.com", //Replace with the sender's email address
+                replyTo: "dileepkumarpaidi@gmail.com",  //Replace with the recipient's email address
+                mimeType: "text/html" //Defines the format of the email body. text/html allows HTML formatting (tables, colors, bold text, links, etc.).
             )
         }
 
@@ -666,16 +670,20 @@ pipeline {
                     </table>
 
                     <p>
-                        <a href="${env.BUILD_URL}">
-                            Open Jenkins Build and Console Output
-                        </a>
+                        <a href="${env.BUILD_URL}">Open Jenkins Build</a> |
+                        <a href="${env.BUILD_URL}console">Open Console Output</a> |
+                        <a href="${env.BUILD_URL}Playwright_20HTML_20Report/">Open Playwright HTML Report</a> |
+                        <a href="${env.BUILD_URL}allure/">Open Allure Report</a> |
+                        <a href="${env.BUILD_URL}artifact/">Download Build Artifacts</a>
                     </p>
 
                     <p>Please check the Playwright execution reports.</p>
                 """,
 
-                to: 'dileepkumarpaidi@gmail.com',
-                mimeType: 'text/html'
+                to: 'dileepkumarpaidi@gmail.com', //Replace with the recipient's email address
+                from: "dileepkumarbennavara@gmail.com", //Replace with the sender's email address
+                replyTo: "dileepkumarpaidi@gmail.com",  //Replace with the recipient's email address
+                mimeType: "text/html" //Defines the format of the email body. text/html allows HTML formatting (tables, colors, bold text, links, etc.).
             )
         }
 
