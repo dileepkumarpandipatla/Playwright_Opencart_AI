@@ -55,7 +55,7 @@ export default defineConfig({
 
     trace: "on",
     screenshot: "on",
-    video: "retain-on-failure",
+    video: "on",
 
     viewport: {
       width: 1280,
@@ -78,7 +78,7 @@ export default defineConfig({
       },
     },
 
-    {
+   /*  {
       name: "firefox",
       use: {
         ...devices["Desktop Firefox"],
@@ -90,6 +90,6 @@ export default defineConfig({
       use: {
         ...devices["Desktop Safari"],
       },
-    },
+    }, */
   ],
 });
