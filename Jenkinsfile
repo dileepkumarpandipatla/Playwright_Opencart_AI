@@ -1,37 +1,17 @@
 
-/*
- * Jenkinsfile.windows
- *
- * Playwright + TypeScript + Docker Compose + Allure
- *
- * Pipeline Stages:
- * 1. Checkout
- * 2. Prepare Environment and Inject Secrets
- * 3. Docker Build
- * 4. Run Playwright Tests
- * 5. Publish JUnit, Allure and HTML Reports
- * 6. Email Notification
- * 7. Docker Cleanup
- *
- * Jenkins Prerequisites:
- * - Windows Jenkins Agent
- * - Docker Desktop / Docker Engine (Linux containers)
- * - Docker Compose
- * - Allure Jenkins Plugin
- * - Allure Commandline configured in Jenkins Tools
- * - HTML Publisher Plugin
- * - Email Extension Plugin
- * - JUnit Plugin
- * - Jenkins Secret File credential: playwright-env
- */
-
 pipeline {
 
     agent any
 
     options {
         timestamps()
+        skipDefaultCheckout(true)
+        timeout(time: 60, unit: 'MINUTES')
     }
+
+    // ==================================================
+    // 1. PARAMETERS
+    // ==================================================
 
     parameters {
 
@@ -46,308 +26,426 @@ pipeline {
                 'test:web',
                 'test:datadriven'
             ],
-            description: 'Select the test suite to execute'
+            description: 'Select the test suite'
         )
 
         choice(
             name: 'BROWSER',
-            choices: [
-                'chromium',
-                'firefox',
-                'webkit'
-            ],
-            description: 'Select browser'
+            choices: ['chromium', 'firefox', 'webkit'],
+            description: 'Select the browser'
         )
 
         choice(
             name: 'MODE',
-            choices: [
-                'headless',
-                'headed'
-            ],
-            description: 'Select execution mode'
+            choices: ['headless', 'headed'],
+            description: 'Select browser execution mode'
         )
     }
+
+    // ==================================================
+    // 2. ENVIRONMENT VARIABLES
+    // ==================================================
 
     environment {
         NODE_ENV = 'test'
         CI = '1'
+
+        ALLURE_RESULTS = 'allure-results'
+        PLAYWRIGHT_REPORT = 'playwright-report'
+        TEST_RESULTS = 'test-results'
+        JUNIT_REPORT = 'reports/results.xml'
     }
 
     stages {
 
-        // ==========================================
-        // 1. CHECKOUT
-        // ==========================================
+        // ==================================================
+        // 3. INITIALIZE
+        // ==================================================
 
-        stage('🔄 Checkout') {
-
+        stage('🔄 Initialize') {
             steps {
+                echo 'Starting Playwright Automation Pipeline'
 
-                checkout scm
+                powershell '''
+                    node --version
+                    npm --version
 
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Node.js or npm is not available"
+                    }
+                '''
             }
         }
 
-        // ==========================================
-        // 2. PREPARE ENVIRONMENT
-        // ==========================================
+        // ==================================================
+        // 4. CHECKOUT SOURCE CODE
+        // ==================================================
 
-        stage('⚙️ Prepare Environment') {
+        stage('📥 Checkout Source Code') {
+            steps {
+                checkout scm
 
+                echo 'Source code checked out successfully'
+            }
+        }
+
+        // ==================================================
+        // 5. INSTALL DEPENDENCIES
+        // ==================================================
+
+        stage('📦 Install Dependencies') {
+            steps {
+                powershell '''
+                    npm ci
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "npm dependency installation failed"
+                    }
+                '''
+            }
+        }
+
+        // ==================================================
+        // 6. INSTALL PLAYWRIGHT BROWSERS
+        // ==================================================
+
+        stage('🎭 Install Playwright Browsers') {
+            steps {
+                powershell '''
+                    npx playwright install
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Playwright browser installation failed"
+                    }
+                '''
+            }
+        }
+
+        // ==================================================
+        // 7. CREATE .ENV FILE USING JENKINS SECRETS
+        // ==================================================
+
+        stage('🔐 Prepare Environment') {
             steps {
 
-                script {
+                withCredentials([
 
-                    // Inject .env securely from Jenkins Credentials
-                    withCredentials([
-                        file(
-                            credentialsId: 'playwright-env',
-                            variable: 'ENV_FILE'
-                        )
-                    ]) {
+                    string(
+                        credentialsId: 'APP_EMAIL',
+                        variable: 'APP_EMAIL'
+                    ),
 
-                        powershell '''
-                            Copy-Item $env:ENV_FILE .env -Force
-                        '''
-                    }
+                    string(
+                        credentialsId: 'APP_PASSWORD',
+                        variable: 'APP_PASSWORD'
+                    ),
 
-                    // Clean previous execution results
+                    string(
+                        credentialsId: 'API_PASSWORD',
+                        variable: 'API_PASSWORD'
+                    ),
+
+                    string(
+                        credentialsId: 'DB_PASSWORD',
+                        variable: 'DB_PASSWORD'
+                    ),
+
+                    string(
+                        credentialsId: 'ADMIN_USERNAME',
+                        variable: 'ADMIN_USERNAME'
+                    ),
+
+                    string(
+                        credentialsId: 'ADMIN_PASSWORD',
+                        variable: 'ADMIN_PASSWORD'
+                    )
+
+                ]) {
+
                     powershell '''
+                        $ErrorActionPreference = 'Stop'
 
-                        $directories = @(
-                            "allure-results",
-                            "playwright-report",
-                            "test-results",
-                            "reports"
-                        )
-
-                        foreach ($directory in $directories) {
-
-                            Remove-Item $directory `
-                                -Recurse -Force `
-                                -ErrorAction SilentlyContinue
-
-                            New-Item -ItemType Directory `
-                                -Path $directory -Force | Out-Null
+                        if (!(Test-Path ".env.example")) {
+                            throw ".env.example file not found"
                         }
 
+                        # Read the template file
+                        $lines = Get-Content ".env.example"
+
+                        # Replace sensitive values
+                        $updatedLines = foreach ($line in $lines) {
+
+                            switch -Regex ($line) {
+
+                                '^APP_EMAIL=' {
+                                    "APP_EMAIL=$env:APP_EMAIL"
+                                    break
+                                }
+
+                                '^APP_PASSWORD=' {
+                                    "APP_PASSWORD=$env:APP_PASSWORD"
+                                    break
+                                }
+
+                                '^PASSWORD=' {
+                                    "PASSWORD=$env:API_PASSWORD"
+                                    break
+                                }
+
+                                '^DB_PASSWORD=' {
+                                    "DB_PASSWORD=$env:DB_PASSWORD"
+                                    break
+                                }
+
+                                '^ADMIN_USERNAME=' {
+                                    "ADMIN_USERNAME=$env:ADMIN_USERNAME"
+                                    break
+                                }
+
+                                '^ADMIN_PASSWORD=' {
+                                    "ADMIN_PASSWORD=$env:ADMIN_PASSWORD"
+                                    break
+                                }
+
+                                default {
+                                    $line
+                                }
+                            }
+                        }
+
+                        # Create .env without printing secrets
+                        $envContent = ($updatedLines -join "`r`n") + "`r`n"
+
+                        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+
+                        [System.IO.File]::WriteAllText(
+                            (Join-Path $PWD ".env"),
+                            $envContent,
+                            $utf8NoBom
+                        )
+
+                        Write-Host ".env file created successfully"
                     '''
                 }
             }
         }
 
-        // ==========================================
-        // 3. DOCKER BUILD
-        // ==========================================
+        // ==================================================
+        // 8. CLEAN OLD REPORTS
+        // ==================================================
 
-        stage('🐳 Docker Build') {
-
+        stage('🧹 Clean Previous Reports') {
             steps {
-
                 powershell '''
+                    $folders = @(
+                        "allure-results",
+                        "allure-report",
+                        "playwright-report",
+                        "test-results",
+                        "reports"
+                    )
 
-                    Write-Host "Checking Docker..."
+                    foreach ($folder in $folders) {
 
-                    docker --version
+                        if (Test-Path $folder) {
+                            Remove-Item $folder -Recurse -Force
+                        }
 
-                    docker compose version
-
-                    Write-Host "Building Playwright Docker Image..."
-
-                    docker compose build
-
-                    if ($LASTEXITCODE -ne 0) {
-                        exit $LASTEXITCODE
+                        New-Item -ItemType Directory -Path $folder -Force |
+                            Out-Null
                     }
 
+                    Write-Host "Previous reports cleaned"
                 '''
             }
         }
 
-        // ==========================================
-        // 4. RUN PLAYWRIGHT TESTS
-        // ==========================================
+        // ==================================================
+        // 9. RUN PLAYWRIGHT TESTS
+        // ==================================================
 
-        stage('▶️ Run Playwright Tests') {
-
+        stage('🧪 Execute Playwright Tests') {
             steps {
 
                 script {
 
-                    // Convert test:e2e into e2e
-                    def suite = params.TEST_SUITE.replace(
-                        'test:',
-                        ''
-                    )
+                    def browserFlag = "--project=${params.BROWSER}"
 
-                    // Browser selection
-                    def browserFlag =
-                        "--project=${params.BROWSER}"
+                    def modeFlag = params.MODE == 'headed'
+                        ? '--headed'
+                        : ''
 
-                    // Headless / Headed selection
-                    def modeFlag =
-                        params.MODE == 'headed' ? '--headed' : ''
+                    withEnv([
+                        "PW_SUITE=${params.TEST_SUITE}",
+                        "PW_BROWSER_FLAG=${browserFlag}",
+                        "PW_MODE_FLAG=${modeFlag}"
+                    ]) {
 
-                    echo "Selected Test Suite: ${suite}"
+                        powershell '''
+                            $ErrorActionPreference = 'Stop'
 
-                    echo "Selected Browser: ${params.BROWSER}"
+                            $testArgs = @(
+                                $env:PW_BROWSER_FLAG
+                            )
 
-                    echo "Execution Mode: ${params.MODE}"
+                            if ($env:PW_MODE_FLAG) {
+                                $testArgs += $env:PW_MODE_FLAG
+                            }
 
-                    // Execute tests inside Docker
-                    powershell """
+                            Write-Host "Test Suite : $env:PW_SUITE"
+                            Write-Host "Browser    : $env:PW_BROWSER_FLAG"
+                            Write-Host "Mode       : $env:PW_MODE_FLAG"
 
-                        docker compose run --rm -T playwright-tests `
-                            ${suite} `
-                            ${browserFlag} `
-                            ${modeFlag}
+                            npm run $env:PW_SUITE -- @testArgs
 
-                        if (`$LASTEXITCODE -ne 0) {
-                            exit `$LASTEXITCODE
-                        }
-
-                    """
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "Playwright test execution failed"
+                            }
+                        '''
+                    }
                 }
             }
         }
     }
 
-    // ==========================================
-    // 5. POST EXECUTION ACTIONS
-    // ==========================================
+    // ==================================================
+    // 10. POST BUILD ACTIONS
+    // ==================================================
 
     post {
 
         always {
 
-            echo 'Publishing execution reports...'
+            script {
 
-            // Archive all execution artifacts
-            archiveArtifacts(
-                artifacts: '''
-                    allure-results/**,
-                    playwright-report/**,
-                    test-results/**,
-                    reports/**
-                ''',
-                allowEmptyArchive: true
-            )
+                echo 'Publishing test execution reports'
 
-            // Publish JUnit report
-            junit(
-                testResults: 'reports/results.xml',
-                allowEmptyResults: true
-            )
+                // JUnit Report
+                junit(
+                    testResults: 'reports/results.xml',
+                    allowEmptyResults: true
+                )
 
-            // Generate and publish Allure HTML report
-            allure(
-                includeProperties: false,
-                results: [
-                    [path: 'allure-results']
-                ]
-            )
+                // Allure Report
+                if (fileExists('allure-results')) {
 
-            // Publish Playwright HTML report
-            publishHTML([
+                    allure(
+                        includeProperties: false,
+                        results: [[path: 'allure-results']]
+                    )
+                }
 
-                allowMissing: true,
+                // Playwright HTML Report
+                if (fileExists('playwright-report/index.html')) {
 
-                alwaysLinkToLastBuild: true,
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'playwright-report',
+                        reportFiles: 'index.html',
+                        reportName: 'Playwright HTML Report'
+                    ])
+                }
 
-                keepAll: true,
+                // Archive Reports
+                archiveArtifacts(
+                    artifacts: '''
+                        playwright-report/**,
+                        allure-results/**,
+                        test-results/**,
+                        reports/**
+                    ''',
+                    allowEmptyArchive: true
+                )
 
-                reportDir: 'playwright-report',
-
-                reportFiles: 'index.html',
-
-                reportName: 'Playwright HTML Report'
-
-            ])
-
-            // Send email notification
-            emailext(
-
-                subject: "Jenkins Build: ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${currentBuild.currentResult}",
-
-                body: """
-
-                    <h2>Playwright Test Execution Report</h2>
-
-                    <p><b>Job:</b> ${env.JOB_NAME}</p>
-
-                    <p><b>Build:</b> #${env.BUILD_NUMBER}</p>
-
-                    <p><b>Status:</b> ${currentBuild.currentResult}</p>
-
-                    <p><b>Test Suite:</b> ${params.TEST_SUITE}</p>
-
-                    <p><b>Browser:</b> ${params.BROWSER}</p>
-
-                    <p><b>Execution Mode:</b> ${params.MODE}</p>
-
-                    <hr/>
-
-                    <h3>Execution Reports</h3>
-
-                    <p>
-                        <a href="${env.BUILD_URL}">
-                            Open Jenkins Build
-                        </a>
-                    </p>
-
-                    <p>
-                        <a href="${env.BUILD_URL}Playwright_20HTML_20Report">
-                            Open Playwright HTML Report
-                        </a>
-                    </p>
-
-                    <p>
-                        <a href="${env.BUILD_URL}allure/">
-                            Open Allure Report
-                        </a>
-                    </p>
-
-                """,
-
-                to: 'dileepkumarpaidi@gmail.com',
-
-                from: 'dileepkumarbennavara@gmail.com',
-
-                replyTo: 'dileepkumarpaidi@gmail.com',
-
-                mimeType: 'text/html'
-
-            )
+                // Remove sensitive environment file
+                powershell '''
+                    if (Test-Path ".env") {
+                        Remove-Item ".env" -Force
+                        Write-Host ".env file removed"
+                    }
+                '''
+            }
         }
 
-        // ==========================================
-        // 6. SUCCESS
-        // ==========================================
+        // ==================================================
+        // 11. SUCCESS NOTIFICATION
+        // ==================================================
 
         success {
 
-            echo 'Playwright execution completed successfully.'
+            emailext(
+                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>Playwright Automation - SUCCESS</h2>
 
+                    <table border="1" cellpadding="8">
+                        <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
+                        <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
+                        <tr><td><b>Test Suite</b></td><td>${params.TEST_SUITE}</td></tr>
+                        <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
+                        <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
+                        <tr><td><b>Status</b></td><td>SUCCESS</td></tr>
+                    </table>
+
+                      <p>
+                        <a href="${env.BUILD_URL}">
+                            Open Jenkins Build and Console Output
+                        </a> |
+						<a href="${env.BUILD_URL}">Open Jenkins Build</a> |
+						<a href="${env.BUILD_URL}Playwright_20HTML_20Report">Open Playwright HTML Report</a>
+                    </p>
+
+                    <p>Playwright test execution completed successfully.</p>
+                """,
+                to: 'dileepkumarpaidi@gmail.com',
+                mimeType: 'text/html'
+            )
         }
 
-        // ==========================================
-        // 7. CLEANUP
-        // ==========================================
+        // ==================================================
+        // 12. FAILURE NOTIFICATION
+        // ==================================================
 
-        cleanup {
+        failure {
 
-            echo 'Cleaning up Docker resources...'
+            emailext(
+                subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                    <h2>Playwright Automation - FAILED</h2>
 
-            powershell '''
+                    <table border="1" cellpadding="8">
+                        <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
+                        <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
+                        <tr><td><b>Test Suite</b></td><td>${params.TEST_SUITE}</td></tr>
+                        <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
+                        <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
+                        <tr><td><b>Status</b></td><td>FAILED</td></tr>
+                    </table>
 
-                docker compose down --remove-orphans
+                    <p>
+                        <a href="${env.BUILD_URL}">
+                            Open Jenkins Build and Console Output
+                        </a> |
+						<a href="${env.BUILD_URL}">Open Jenkins Build</a> |
+						<a href="${env.BUILD_URL}Playwright_20HTML_20Report">Open Playwright HTML Report</a>
+                    </p>
 
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "Docker cleanup failed. Check Docker Engine."
-                }
+                    <p>Please check the test execution reports.</p>
+                """,
+                to: 'dileepkumarpaidi@gmail.com',
+                mimeType: 'text/html'
+            )
+        }
 
-            '''
+        // ==================================================
+        // 13. ABORTED NOTIFICATION
+        // ==================================================
+
+        aborted {
+            echo 'Playwright pipeline was aborted'
         }
     }
 }
+ 
