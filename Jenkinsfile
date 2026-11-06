@@ -18,13 +18,14 @@ pipeline {
         choice(
             name: 'TEST_SUITE',
             choices: [
-                'test:e2e',
-                'test:master',
-                'test:sanity',
-                'test:regression',
-                'test:api',
-                'test:web',
-                'test:datadriven'
+                'all',
+                'e2e',
+                'master',
+                'sanity',
+                'regression',
+                'api',
+                'web',
+                'datadriven'
             ],
             description: 'Select the test suite'
         )
@@ -47,7 +48,6 @@ pipeline {
     // ==================================================
 
     environment {
-        NODE_ENV = 'test'
         CI = '1'
 
         ALLURE_RESULTS = 'allure-results'
@@ -64,15 +64,31 @@ pipeline {
 
         stage('🔄 Initialize') {
             steps {
-                echo 'Starting Playwright Automation Pipeline'
+
+                echo 'Starting Playwright Docker Pipeline'
 
                 powershell '''
-                    node --version
-                    npm --version
+                    $ErrorActionPreference = 'Stop'
+
+                    docker --version
 
                     if ($LASTEXITCODE -ne 0) {
-                        throw "Node.js or npm is not available"
+                        throw "Docker CLI is not available"
                     }
+
+                    docker compose version
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Docker Compose is not available"
+                    }
+
+                    docker info
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Cannot connect to Docker Engine. Check Docker Desktop."
+                    }
+
+                    Write-Host "Docker Engine is available"
                 '''
             }
         }
@@ -83,6 +99,7 @@ pipeline {
 
         stage('📥 Checkout Source Code') {
             steps {
+
                 checkout scm
 
                 echo 'Source code checked out successfully'
@@ -90,39 +107,7 @@ pipeline {
         }
 
         // ==================================================
-        // 5. INSTALL DEPENDENCIES
-        // ==================================================
-
-        stage('📦 Install Dependencies') {
-            steps {
-                powershell '''
-                    npm ci
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "npm dependency installation failed"
-                    }
-                '''
-            }
-        }
-
-        // ==================================================
-        // 6. INSTALL PLAYWRIGHT BROWSERS
-        // ==================================================
-
-        stage('🎭 Install Playwright Browsers') {
-            steps {
-                powershell '''
-                    npx playwright install
-
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Playwright browser installation failed"
-                    }
-                '''
-            }
-        }
-
-        // ==================================================
-        // 7. CREATE .ENV FILE USING JENKINS SECRETS
+        // 5. PREPARE ENVIRONMENT USING JENKINS SECRETS
         // ==================================================
 
         stage('🔐 Prepare Environment') {
@@ -169,10 +154,8 @@ pipeline {
                             throw ".env.example file not found"
                         }
 
-                        # Read the template file
                         $lines = Get-Content ".env.example"
 
-                        # Replace sensitive values
                         $updatedLines = foreach ($line in $lines) {
 
                             switch -Regex ($line) {
@@ -213,7 +196,6 @@ pipeline {
                             }
                         }
 
-                        # Create .env without printing secrets
                         $envContent = ($updatedLines -join "`r`n") + "`r`n"
 
                         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -231,12 +213,15 @@ pipeline {
         }
 
         // ==================================================
-        // 8. CLEAN OLD REPORTS
+        // 6. CLEAN OLD REPORTS
         // ==================================================
 
         stage('🧹 Clean Previous Reports') {
             steps {
+
                 powershell '''
+                    $ErrorActionPreference = 'Stop'
+
                     $folders = @(
                         "allure-results",
                         "allure-report",
@@ -261,7 +246,30 @@ pipeline {
         }
 
         // ==================================================
-        // 9. RUN PLAYWRIGHT TESTS
+        // 7. BUILD DOCKER IMAGE
+        // ==================================================
+
+        stage('🐳 Docker Build') {
+            steps {
+
+                echo 'Building Playwright Docker image'
+
+                powershell '''
+                    $ErrorActionPreference = 'Stop'
+
+                    docker compose build
+
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Docker image build failed"
+                    }
+
+                    Write-Host "Docker image built successfully"
+                '''
+            }
+        }
+
+        // ==================================================
+        // 8. EXECUTE PLAYWRIGHT TESTS IN DOCKER
         // ==================================================
 
         stage('🧪 Execute Playwright Tests') {
@@ -269,38 +277,43 @@ pipeline {
 
                 script {
 
-                    def browserFlag = "--project=${params.BROWSER}"
-
-                    def modeFlag = params.MODE == 'headed'
-                        ? '--headed'
-                        : ''
-
                     withEnv([
                         "PW_SUITE=${params.TEST_SUITE}",
-                        "PW_BROWSER_FLAG=${browserFlag}",
-                        "PW_MODE_FLAG=${modeFlag}"
+                        "PW_BROWSER=${params.BROWSER}",
+                        "PW_MODE=${params.MODE}"
                     ]) {
 
                         powershell '''
                             $ErrorActionPreference = 'Stop'
 
-                            $testArgs = @(
-                                $env:PW_BROWSER_FLAG
+                            $dockerArgs = @(
+                                'compose',
+                                'run',
+                                '--rm',
+                                '-T',
+                                'playwright-tests',
+                                $env:PW_SUITE,
+                                "--project=$env:PW_BROWSER"
                             )
 
-                            if ($env:PW_MODE_FLAG) {
-                                $testArgs += $env:PW_MODE_FLAG
+                            if ($env:PW_MODE -eq 'headed') {
+                                $dockerArgs += '--headed'
                             }
 
-                            Write-Host "Test Suite : $env:PW_SUITE"
-                            Write-Host "Browser    : $env:PW_BROWSER_FLAG"
-                            Write-Host "Mode       : $env:PW_MODE_FLAG"
+                            Write-Host "=================================="
+                            Write-Host "Playwright Docker Execution"
+                            Write-Host "Suite   : $env:PW_SUITE"
+                            Write-Host "Browser : $env:PW_BROWSER"
+                            Write-Host "Mode    : $env:PW_MODE"
+                            Write-Host "=================================="
 
-                            npm run $env:PW_SUITE -- @testArgs
+                            & docker @dockerArgs
 
                             if ($LASTEXITCODE -ne 0) {
-                                throw "Playwright test execution failed"
+                                throw "Playwright tests failed inside Docker"
                             }
+
+                            Write-Host "Playwright execution completed"
                         '''
                     }
                 }
@@ -309,7 +322,7 @@ pipeline {
     }
 
     // ==================================================
-    // 10. POST BUILD ACTIONS
+    // 9. POST BUILD ACTIONS
     // ==================================================
 
     post {
@@ -318,15 +331,33 @@ pipeline {
 
             script {
 
-                echo 'Publishing test execution reports'
+                echo 'Publishing execution reports'
 
+                // ------------------------------------------
+                // Docker Cleanup
+                // ------------------------------------------
+
+                powershell '''
+                    docker compose down --remove-orphans
+
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-Warning "Docker Compose cleanup returned an error"
+                    }
+                '''
+
+                // ------------------------------------------
                 // JUnit Report
+                // ------------------------------------------
+
                 junit(
                     testResults: 'reports/results.xml',
                     allowEmptyResults: true
                 )
 
+                // ------------------------------------------
                 // Allure Report
+                // ------------------------------------------
+
                 if (fileExists('allure-results')) {
 
                     allure(
@@ -335,7 +366,10 @@ pipeline {
                     )
                 }
 
+                // ------------------------------------------
                 // Playwright HTML Report
+                // ------------------------------------------
+
                 if (fileExists('playwright-report/index.html')) {
 
                     publishHTML([
@@ -348,77 +382,85 @@ pipeline {
                     ])
                 }
 
+                // ------------------------------------------
                 // Archive Reports
+                // ------------------------------------------
+
                 archiveArtifacts(
                     artifacts: '''
                         playwright-report/**,
                         allure-results/**,
+                        allure-report/**,
                         test-results/**,
                         reports/**
                     ''',
                     allowEmptyArchive: true
                 )
 
-                // Remove sensitive environment file
+                // ------------------------------------------
+                // Remove Sensitive Environment File
+                // ------------------------------------------
+
                 powershell '''
                     if (Test-Path ".env") {
                         Remove-Item ".env" -Force
-                        Write-Host ".env file removed"
+                        Write-Host ".env file removed successfully"
                     }
                 '''
             }
         }
 
         // ==================================================
-        // 11. SUCCESS NOTIFICATION
+        // 10. SUCCESS NOTIFICATION
         // ==================================================
 
         success {
 
             emailext(
                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+
                 body: """
-                    <h2>Playwright Automation - SUCCESS</h2>
+                    <h2>Playwright Docker Automation - SUCCESS</h2>
 
                     <table border="1" cellpadding="8">
                         <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
                         <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
-                        <tr><td><b>Test Suite</b></td><td>${params.TEST_SUITE}</td></tr>
+                        <tr><td><b>Suite</b></td><td>${params.TEST_SUITE}</td></tr>
                         <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
                         <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
                         <tr><td><b>Status</b></td><td>SUCCESS</td></tr>
                     </table>
 
-                      <p>
+                    <p>
                         <a href="${env.BUILD_URL}">
-                            Open Jenkins Build and Console Output
-                        </a> |
-						<a href="${env.BUILD_URL}">Open Jenkins Build</a> |
-						<a href="${env.BUILD_URL}Playwright_20HTML_20Report">Open Playwright HTML Report</a>
+                            Open Jenkins Build
+                        </a>
                     </p>
 
-                    <p>Playwright test execution completed successfully.</p>
+                    <p>Playwright tests completed successfully inside Docker.</p>
                 """,
+
                 to: 'dileepkumarpaidi@gmail.com',
                 mimeType: 'text/html'
             )
         }
 
         // ==================================================
-        // 12. FAILURE NOTIFICATION
+        // 11. FAILURE NOTIFICATION
         // ==================================================
 
         failure {
 
             emailext(
                 subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+
                 body: """
-                    <h2>Playwright Automation - FAILED</h2>
+                    <h2>Playwright Docker Automation - FAILED</h2>
 
                     <table border="1" cellpadding="8">
                         <tr><td><b>Job</b></td><td>${env.JOB_NAME}</td></tr>
                         <tr><td><b>Build</b></td><td>#${env.BUILD_NUMBER}</td></tr>
-                        <tr><td><b>Test Suite</b></td><td>${params.TEST_SUITE}</td></tr>
+                        <tr><td><b>Suite</b></td><td>${params.TEST_SUITE}</td></tr>
                         <tr><td><b>Browser</b></td><td>${params.BROWSER}</td></tr>
                         <tr><td><b>Mode</b></td><td>${params.MODE}</td></tr>
                         <tr><td><b>Status</b></td><td>FAILED</td></tr>
@@ -427,25 +469,23 @@ pipeline {
                     <p>
                         <a href="${env.BUILD_URL}">
                             Open Jenkins Build and Console Output
-                        </a> |
-						<a href="${env.BUILD_URL}">Open Jenkins Build</a> |
-						<a href="${env.BUILD_URL}Playwright_20HTML_20Report">Open Playwright HTML Report</a>
+                        </a>
                     </p>
 
-                    <p>Please check the test execution reports.</p>
+                    <p>Please check the Playwright execution reports.</p>
                 """,
+
                 to: 'dileepkumarpaidi@gmail.com',
                 mimeType: 'text/html'
             )
         }
 
         // ==================================================
-        // 13. ABORTED NOTIFICATION
+        // 12. ABORTED
         // ==================================================
 
         aborted {
-            echo 'Playwright pipeline was aborted'
+            echo 'Playwright Docker pipeline was aborted'
         }
     }
 }
- 

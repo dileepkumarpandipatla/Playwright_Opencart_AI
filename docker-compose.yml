@@ -23,7 +23,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: playwright-opencart
-    container_name: playwright-opencart-tests
+    # container_name: playwright-opencart-tests
     working_dir: /app
     env_file:
       - .env
@@ -43,5 +43,5 @@ services:
     # Default suite — override via command-line argument
     #   docker compose run --rm playwright-tests api
     command: [ "all" ]
-    stdin_open: true
-    tty: true
+    # stdin_open: true
+    # tty: true
