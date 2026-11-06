@@ -1,35 +1,33 @@
-# =============================================================================
-# Dockerfile — Playwright + TypeScript Automation Framework
-# =============================================================================
-# Base image with Playwright v1.62.0, Node.js, and system dependencies
+
+# Playwright + TypeScript Automation Framework
 FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
-# Set working directory
 WORKDIR /app
 
-# Copy dependency manifests first (leverages Docker layer caching)
+# Copy dependency manifests
 COPY package*.json ./
 
-# Install project dependencies (clean install — respects package-lock.json)
+# Install dependencies
 RUN npm ci
 
-# Copy the rest of the project source
+# Copy project source and configuration
 COPY . .
 
-# Create output directories for reports and test artifacts
-RUN mkdir -p /app/reports /app/allure-results /app/allure-report /app/test-results /app/playwright-report
+# Create report directories, normalize entrypoint line endings,
+# and make the script executable
+RUN mkdir -p \
+    /app/reports \
+    /app/allure-results \
+    /app/allure-report \
+    /app/test-results \
+    /app/playwright-report \
+    && sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && chmod +x /app/docker-entrypoint.sh
 
-# Enable CI mode — Playwright config uses this to adjust retries, workers, headless
 ENV CI=true
-
-# Point to the Playwright browsers bundled in the base image
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Make the entrypoint script executable
-RUN chmod +x /app/docker-entrypoint.sh
+# Run the entrypoint explicitly through Bash
+ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
 
-# Use the entrypoint so the suite name argument is handled automatically
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
-
-# Default: run all tests
 CMD ["all"]

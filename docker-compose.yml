@@ -1,34 +1,33 @@
 
-# =============================================================================
-# Docker Compose - Playwright + TypeScript Automation Framework
-# =============================================================================
-
 services:
-
   playwright-tests:
-
     build:
       context: .
       dockerfile: Dockerfile
 
     image: playwright-opencart
+    container_name: playwright-opencart-tests
 
     working_dir: /app
 
-    # Jenkins-generated environment variables
     env_file:
       - .env
 
     environment:
       CI: "1"
 
-    # Persist reports on Jenkins workspace
     volumes:
+      # Keep container dependencies separate from host dependencies
+      - /app/node_modules
+
+      # Persist reports and test results on the host
       - ./reports:/app/reports
       - ./allure-results:/app/allure-results
       - ./allure-report:/app/allure-report
       - ./playwright-report:/app/playwright-report
       - ./test-results:/app/test-results
 
-    # Default suite
     command: ["all"]
+
+    stdin_open: true
+    tty: true
