@@ -31,9 +31,9 @@ services:
       CI: "1"
     volumes:
       # Mount the project root so code changes are reflected without rebuilds
-      - .:/app
+      # - .:/app
       # Preserve the container's node_modules (bind mount would shadow it)
-      - /app/node_modules
+      # - /app/node_modules
       # Persist reports and artifacts on the host
       - ./reports:/app/reports
       - ./allure-results:/app/allure-results
