@@ -18,8 +18,8 @@ pipeline {
         choice(
             name: 'TEST_SUITE',
             choices: [
-                'all',
                 'e2e',
+                'all',
                 'master',
                 'sanity',
                 'regression',
