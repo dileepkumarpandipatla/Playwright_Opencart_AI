@@ -23,7 +23,6 @@ services:
       context: .
       dockerfile: Dockerfile
     image: playwright-opencart
-    container_name: playwright-opencart-tests
     working_dir: /app
     env_file:
       - .env
