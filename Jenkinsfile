@@ -68,7 +68,7 @@ pipeline {
                 echo 'Starting Playwright Docker Pipeline'
 
                 powershell '''
-                    $ErrorActionPreference = 'Stop'
+                    $ErrorActionPreference = 'Continue'
 
                     docker --version
 
@@ -107,7 +107,40 @@ pipeline {
         }
 
         // ==================================================
-        // 5. PREPARE ENVIRONMENT USING JENKINS SECRETS
+        // 5. VALIDATE DOCKER FILES
+        // ==================================================
+
+        stage('🔍 Validate Docker Files') {
+            steps {
+
+                powershell '''
+                    $ErrorActionPreference = 'Stop'
+
+                    $requiredFiles = @(
+                        "Dockerfile",
+                        "docker-compose.yml",
+                        "docker-entrypoint.sh",
+                        ".env.example",
+                        "package.json",
+                        "package-lock.json"
+                    )
+
+                    foreach ($file in $requiredFiles) {
+
+                        if (!(Test-Path $file -PathType Leaf)) {
+                            throw "Required file missing: $file"
+                        }
+
+                        Write-Host "Verified: $file"
+                    }
+
+                    Write-Host "All required project files are available"
+                '''
+            }
+        }
+
+        // ==================================================
+        // 6. PREPARE ENVIRONMENT USING JENKINS SECRETS
         // ==================================================
 
         stage('🔐 Prepare Environment') {
@@ -213,7 +246,7 @@ pipeline {
         }
 
         // ==================================================
-        // 6. CLEAN OLD REPORTS
+        // 7. CLEAN OLD REPORTS
         // ==================================================
 
         stage('🧹 Clean Previous Reports') {
@@ -246,7 +279,7 @@ pipeline {
         }
 
         // ==================================================
-        // 7. BUILD DOCKER IMAGE
+        // 8. BUILD DOCKER IMAGE
         // ==================================================
 
         stage('🐳 Docker Build') {
@@ -255,9 +288,9 @@ pipeline {
                 echo 'Building Playwright Docker image'
 
                 powershell '''
-                    $ErrorActionPreference = 'Stop'
+                    $ErrorActionPreference = 'Continue'
 
-                    docker compose build
+                    docker compose build 2>&1
 
                     if ($LASTEXITCODE -ne 0) {
                         throw "Docker image build failed"
@@ -269,7 +302,7 @@ pipeline {
         }
 
         // ==================================================
-        // 8. EXECUTE PLAYWRIGHT TESTS IN DOCKER
+        // 9. EXECUTE PLAYWRIGHT TESTS IN DOCKER
         // ==================================================
 
         stage('🧪 Execute Playwright Tests') {
@@ -284,7 +317,7 @@ pipeline {
                     ]) {
 
                         powershell '''
-                            $ErrorActionPreference = 'Stop'
+                            $ErrorActionPreference = 'Continue'
 
                             $dockerArgs = @(
                                 'compose',
@@ -307,13 +340,13 @@ pipeline {
                             Write-Host "Mode    : $env:PW_MODE"
                             Write-Host "=================================="
 
-                            & docker @dockerArgs
+                            & docker @dockerArgs 2>&1
 
                             if ($LASTEXITCODE -ne 0) {
                                 throw "Playwright tests failed inside Docker"
                             }
 
-                            Write-Host "Playwright execution completed"
+                            Write-Host "Playwright execution completed successfully"
                         '''
                     }
                 }
@@ -322,7 +355,7 @@ pipeline {
     }
 
     // ==================================================
-    // 9. POST BUILD ACTIONS
+    // 10. POST BUILD ACTIONS
     // ==================================================
 
     post {
@@ -338,10 +371,15 @@ pipeline {
                 // ------------------------------------------
 
                 powershell '''
-                    docker compose down --remove-orphans
+                    $ErrorActionPreference = 'Continue'
+
+                    docker compose down --remove-orphans 2>&1
 
                     if ($LASTEXITCODE -ne 0) {
                         Write-Warning "Docker Compose cleanup returned an error"
+                    }
+                    else {
+                        Write-Host "Docker cleanup completed"
                     }
                 '''
 
@@ -411,7 +449,7 @@ pipeline {
         }
 
         // ==================================================
-        // 10. SUCCESS NOTIFICATION
+        // 11. SUCCESS NOTIFICATION
         // ==================================================
 
         success {
@@ -446,7 +484,7 @@ pipeline {
         }
 
         // ==================================================
-        // 11. FAILURE NOTIFICATION
+        // 12. FAILURE NOTIFICATION
         // ==================================================
 
         failure {
@@ -481,7 +519,7 @@ pipeline {
         }
 
         // ==================================================
-        // 12. ABORTED
+        // 13. ABORTED
         // ==================================================
 
         aborted {
